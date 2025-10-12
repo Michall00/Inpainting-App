@@ -32,6 +32,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
   final GlobalKey _imageKey = GlobalKey();
   Uint8List? _outputBytes;
   InteractionMode _mode = InteractionMode.segment;
+  Offset? _lastTapImagePoint;
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -183,6 +184,97 @@ class _InpaintingPageState extends State<InpaintingPage> {
     });
   }
 
+  Future<void> _runSegmentationFromBbox(Rect bbox) async {
+    if (_imageFile == null) return;
+    final encoderData = await rootBundle.load('assets/encoder.onnx');
+    final decoderData = await rootBundle.load('assets/decoder.onnx');
+
+    final segmentationStart = DateTime.now();
+    FirebaseAnalytics.instance.logEvent(
+      name: 'segmentation_started',
+      parameters: {
+        'x1': bbox.left,
+        'y1': bbox.top,
+        'x2': bbox.right,
+        'y2': bbox.bottom,
+      },
+    );
+
+    final mask = await SegmentationService.segmentFromBbox(
+      imageFile: _imageFile!,
+      bboxPx: bbox,
+      encoderData: encoderData,
+      decoderData: decoderData,
+    );
+
+    final segmentationEnd = DateTime.now();
+    final durationMs =
+        segmentationEnd.difference(segmentationStart).inMilliseconds;
+
+    FirebaseAnalytics.instance.logEvent(
+      name: 'segmentation_completed',
+      parameters: {
+        'duration_ms': durationMs,
+      },
+    );
+
+    final imageBytes = await _imageFile!.readAsBytes();
+    final baseImage = img.decodeImage(imageBytes)!;
+    final decodedMask = img.decodeImage(mask)!;
+
+    final overlay = img.Image.from(baseImage);
+    for (int y = 0; y < overlay.height; y++) {
+      for (int x = 0; x < overlay.width; x++) {
+        final v = decodedMask.getPixel(x, y).r;
+        if (v == 0) {
+          overlay.setPixelRgba(x, y, 255, 0, 0, 100);
+        }
+      }
+    }
+
+    setState(() {
+      _segmentationMask = mask;
+      _maskImage = decodedMask;
+      _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
+    });
+  }
+
+  Future<void> _onSegmentPressed() async {
+    if (_imageFile == null) return;
+
+    if (_mode == InteractionMode.segment) {
+      if (_lastTapImagePoint == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content:
+                  Text('Kliknij na obiekt, aby wskazać punkt segmentacji')),
+        );
+        return;
+      }
+      await _runSegmentationFromClick(_lastTapImagePoint!);
+      return;
+    }
+
+    Rect? box = _bbox;
+    if (box == null) {
+      if (_points.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Najpierw narysuj maskę')),
+        );
+        return;
+      }
+      box = bboxFromPoints(_points);
+      if (box.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Nie udało się wyznaczyć bboxa')),
+        );
+        return;
+      }
+    }
+
+    await _runSegmentationFromBbox(box);
+  }
+
   Future<void> _runInpainting() async {
     if (_imageFile == null || _maskImage == null) return;
 
@@ -296,6 +388,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
                   final scaleY = _imageHeight! / boxSize.height;
                   final imagePoint =
                       Offset(local.dx * scaleX, local.dy * scaleY);
+
+                  _lastTapImagePoint = imagePoint;
                   _runSegmentationFromClick(imagePoint);
                 }
               },
@@ -335,20 +429,20 @@ class _InpaintingPageState extends State<InpaintingPage> {
           heroTag: 'pick',
           child: const Icon(Icons.photo_library),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         FloatingActionButton(
           onPressed: _pickImageFromCamera,
           heroTag: 'camera',
           tooltip: 'Zrób zdjęcie',
           child: const Icon(Icons.camera_alt),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         FloatingActionButton(
           onPressed: _runInpainting,
           heroTag: 'inpaint',
           child: const Icon(Icons.auto_fix_high),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         FloatingActionButton(
           onPressed: _outputBytes == null
               ? null
@@ -357,7 +451,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
           tooltip: 'Zapisz do galerii',
           child: const Icon(Icons.save_alt),
         ),
-        const SizedBox(width: 16),
+        const SizedBox(width: 12),
         FloatingActionButton(
           onPressed: () {
             setState(() {
@@ -370,12 +464,16 @@ class _InpaintingPageState extends State<InpaintingPage> {
           child: Icon(
               _mode == InteractionMode.draw ? Icons.brush : Icons.touch_app),
         ),
-        const SizedBox(width: 16),
-        FloatingActionButton(
-          onPressed: _onShowBBoxFromMask,
-          heroTag: 'show-bbox',
-          tooltip: 'Pokaż bbox z maski',
-          child: const Icon(Icons.crop_square),
+        const SizedBox(width: 12),
+        FloatingActionButton.extended(
+          onPressed: _onSegmentPressed,
+          heroTag: 'segment',
+          label: Text(_mode == InteractionMode.draw
+              ? 'Segmentuj (bbox)'
+              : 'Segmentuj (punkt)'),
+          icon: Icon(_mode == InteractionMode.draw
+              ? Icons.crop_square
+              : Icons.touch_app),
         ),
       ],
     );
