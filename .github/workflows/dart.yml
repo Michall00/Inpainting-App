@@ -91,9 +91,24 @@ jobs:
           xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -showBuildSettings | \
           egrep "CODE_SIGN|DEVELOPMENT_TEAM|PRODUCT_BUNDLE_IDENTIFIER"
 
+      - name: Flutter generate Xcode project
+        run: flutter build ios --release --no-codesign --config-only
 
-      - name: Build iOS app
-        run: flutter build ios --release --no-codesign --build-name=1.1.0 --build-number=${{ github.run_number }}
+      - name: Build with xcodebuild (no signing)
+        run: |
+          xcodebuild \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            CODE_SIGN_STYLE=Automatic \
+            DEVELOPMENT_TEAM='' \
+            PROVISIONING_PROFILE_SPECIFIER='' \
+            clean build
 
       - name: Check UUIDs
         run: |
