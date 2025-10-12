@@ -17,10 +17,6 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '15.4'
-
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
