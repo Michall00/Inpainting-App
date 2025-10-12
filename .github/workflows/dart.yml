@@ -17,9 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '15.4'
+
       - uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          flutter-version: '3.22.3'
           architecture: x64
       - run: flutter pub get
 
@@ -76,7 +81,7 @@ jobs:
 
           sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";/g' "$PBX"
           sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "";/g' "$PBX"
-          
+
           for f in ios/Flutter/Debug.xcconfig ios/Flutter/Release.xcconfig; do
             echo 'CODE_SIGNING_ALLOWED = NO' >> "$f"
             echo 'CODE_SIGNING_REQUIRED = NO' >> "$f"
