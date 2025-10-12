@@ -1,4 +1,5 @@
 import 'package:image/image.dart' as img;
+import 'dart:ui';
 
 img.Image dilateMask(img.Image mask, {int radius = 5}) {
   final w = mask.width;
@@ -25,4 +26,26 @@ img.Image dilateMask(img.Image mask, {int radius = 5}) {
   }
 
   return result;
+}
+
+Rect bboxFromPoints(List<Offset> points) {
+  double minX = double.infinity, minY = double.infinity;
+  double maxX = -double.infinity, maxY = -double.infinity;
+  bool any = false;
+
+  for (int i = 0; i < points.length; i++) {
+    final p = points[i];
+    if (!p.isFinite) continue;
+    any = true;
+    if (p.dx < minX) minX = p.dx;
+    if (p.dy < minY) minY = p.dy;
+    if (p.dx > maxX) maxX = p.dx;
+    if (p.dy > maxY) maxY = p.dy;
+  }
+
+  if (!any) {
+    return Rect.zero;
+  }
+
+  return Rect.fromLTRB(minX, minY, maxX, maxY);
 }

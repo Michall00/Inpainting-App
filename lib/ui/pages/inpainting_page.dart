@@ -27,6 +27,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
   int? _imageHeight;
   Uint8List? _previewMaskBytes;
   final List<Offset> _points = [];
+  Rect? _bbox;
   Uint8List? _segmentationMask;
   final GlobalKey _imageKey = GlobalKey();
   Uint8List? _outputBytes;
@@ -143,7 +144,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       },
     );
 
-    final mask = await SegmentationService.runSegmentation(
+    final mask = await SegmentationService.segmentFromPoint(
       imageFile: _imageFile!,
       clickPoint: point,
       encoderData: encoderData,
@@ -229,6 +230,39 @@ class _InpaintingPageState extends State<InpaintingPage> {
     });
   }
 
+  void _onShowBBoxFromMask() {
+    if (_points.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Najpierw narysuj maskę')),
+      );
+      return;
+    }
+
+    final box = bboxFromPoints(_points);
+    if (box.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nie udało się wyznaczyć bboxa')),
+      );
+      return;
+    }
+
+    final renderBox =
+        _imageKey.currentContext?.findRenderObject() as RenderBox?;
+    final overlaySize = renderBox?.size;
+    final clamped = (overlaySize == null)
+        ? box
+        : Rect.fromLTRB(
+            box.left.clamp(0.0, overlaySize.width),
+            box.top.clamp(0.0, overlaySize.height),
+            box.right.clamp(0.0, overlaySize.width),
+            box.bottom.clamp(0.0, overlaySize.height),
+          );
+
+    setState(() {
+      _bbox = clamped;
+    });
+  }
+
   Widget _buildImageStack() {
     final width = _imageWidth?.toDouble() ?? 256;
     final height = _imageHeight?.toDouble() ?? 256;
@@ -284,6 +318,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
                 size: Size(width, height),
               ),
             ),
+            if (_bbox != null) CustomPaint(painter: BBoxPainter(_bbox!)),
           ],
         ),
       ),
@@ -334,6 +369,13 @@ class _InpaintingPageState extends State<InpaintingPage> {
           heroTag: 'mode',
           child: Icon(
               _mode == InteractionMode.draw ? Icons.brush : Icons.touch_app),
+        ),
+        const SizedBox(width: 16),
+        FloatingActionButton(
+          onPressed: _onShowBBoxFromMask,
+          heroTag: 'show-bbox',
+          tooltip: 'Pokaż bbox z maski',
+          child: const Icon(Icons.crop_square),
         ),
       ],
     );

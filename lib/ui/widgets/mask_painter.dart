@@ -21,3 +21,22 @@ class MaskPainter extends CustomPainter {
   @override
   bool shouldRepaint(MaskPainter oldDelegate) => true;
 }
+
+class BBoxPainter extends CustomPainter {
+  final Rect box;
+  BBoxPainter(this.box);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (box.isEmpty) return;
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..color = Colors.red;
+    canvas.drawRect(box, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant BBoxPainter oldDelegate) =>
+      oldDelegate.box != box;
+}
