@@ -66,24 +66,32 @@ jobs:
           cd ios
           pod install
 
-      - name: Patch Xcode project for unsigned ios device build
+      - name: Patch Xcode project
         run: |
           PBX="ios/Runner.xcodeproj/project.pbxproj"
 
           sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 12.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' "$PBX"
 
-          sed -i '' 's/DEVELOPMENT_TEAM = [A-Z0-9]\+;/DEVELOPMENT_TEAM = "";/g' "$PBX"
+          # 1) TargetAttributes (Runner)
+          awk '1;/TargetAttributes = \{/{flag=1}
+              flag && /97C146ED1CF9000F007C117D/ { print; print "\t\t\t\tDevelopmentTeam = AAAAAAAAAA;"; flag=0; next }' "$PBX" > "$PBX.tmp" && mv "$PBX.tmp" "$PBX"
+
+          sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = AAAAAAAAAA;/g' "$PBX"
+          grep -q 'DEVELOPMENT_TEAM = AAAAAAAAAA;' "$PBX" || \
+            sed -i '' 's/PRODUCT_NAME = "\$([^)]*)";/&\
+            \t\t\t\tDEVELOPMENT_TEAM = AAAAAAAAAA;\
+            \t\t\t\tCODE_SIGN_STYLE = Manual;\
+            \t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "";\
+            \t\t\t\tCODE_SIGN_IDENTITY = "";\
+            \t\t\t\t"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "";/g' "$PBX"
 
           sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";/g' "$PBX"
           sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "";/g' "$PBX"
 
-          for f in ios/Flutter/Debug.xcconfig ios/Flutter/Release.xcconfig; do
-            echo 'CODE_SIGNING_ALLOWED = NO' >> "$f"
-            echo 'CODE_SIGNING_REQUIRED = NO' >> "$f"
-            echo 'CODE_SIGN_IDENTITY =' >> "$f"
-            echo 'PROVISIONING_PROFILE_SPECIFIER =' >> "$f"
-            echo 'DEVELOPMENT_TEAM =' >> "$f"
-          done
+          echo "---- sanity check ----"
+          grep -n 'DevelopmentTeam = ' "$PBX" || true
+          grep -n 'DEVELOPMENT_TEAM = ' "$PBX" || true
+
 
 
       - name: Build iOS app
