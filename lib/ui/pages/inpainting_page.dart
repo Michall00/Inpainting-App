@@ -214,7 +214,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
     FirebaseAnalytics.instance.logEvent(
       name: 'segmentation_completed',
       parameters: {
-        'duration_ms': durationMs,
+        'segmentation_duration_ms': durationMs,
       },
     );
 
@@ -310,7 +310,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
     FirebaseAnalytics.instance.logEvent(
       name: 'inpainting_completed',
       parameters: {
-        'duration_ms': durationMs,
+        'inpainting_duration_ms': durationMs,
       },
     );
 
