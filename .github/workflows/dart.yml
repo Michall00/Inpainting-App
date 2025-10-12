@@ -79,9 +79,12 @@ jobs:
               echo "";
               echo "CODE_SIGNING_ALLOWED=NO";
               echo "CODE_SIGNING_REQUIRED=NO";
-              echo "CODE_SIGN_STYLE=Automatic";
+              echo "CODE_SIGN_STYLE=Manual";
               echo "DEVELOPMENT_TEAM=";
               echo "PROVISIONING_PROFILE_SPECIFIER=";
+              echo "CODE_SIGN_IDENTITY=";
+              echo "CODE_SIGN_ENTITLEMENTS=";
+              echo "CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO";
             } >> "$xc"
           done
 
@@ -90,25 +93,26 @@ jobs:
         run: |
           xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -showBuildSettings | \
           egrep "CODE_SIGN|DEVELOPMENT_TEAM|PRODUCT_BUNDLE_IDENTIFIER"
+      
+      - name: Build iOS app
+        run: flutter build ios --release --no-codesign --build-name=1.1.0 --build-number=${{ github.run_number }}
 
-      - name: Flutter generate Xcode project
-        run: flutter build ios --release --no-codesign --config-only
 
-      - name: Build with xcodebuild (no signing)
-        run: |
-          xcodebuild \
-            -workspace ios/Runner.xcworkspace \
-            -scheme Runner \
-            -configuration Release \
-            -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY='' \
-            CODE_SIGN_STYLE=Automatic \
-            DEVELOPMENT_TEAM='' \
-            PROVISIONING_PROFILE_SPECIFIER='' \
-            clean build
+      # - name: Build with xcodebuild (no signing)
+      #   run: |
+      #     xcodebuild \
+      #       -workspace ios/Runner.xcworkspace \
+      #       -scheme Runner \
+      #       -configuration Release \
+      #       -sdk iphoneos \
+      #       -destination 'generic/platform=iOS' \
+      #       CODE_SIGNING_ALLOWED=NO \
+      #       CODE_SIGNING_REQUIRED=NO \
+      #       CODE_SIGN_IDENTITY='' \
+      #       CODE_SIGN_STYLE=Automatic \
+      #       DEVELOPMENT_TEAM='' \
+      #       PROVISIONING_PROFILE_SPECIFIER='' \
+      #       clean build
 
       - name: Check UUIDs
         run: |
