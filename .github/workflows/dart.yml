@@ -65,6 +65,11 @@ jobs:
         run: |
           cd ios
           pod install
+          
+      - name: Show build settings (sanity check)
+        run: |
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -showBuildSettings | \
+          egrep "CODE_SIGN|DEVELOPMENT_TEAM|PRODUCT_BUNDLE_IDENTIFIER"
 
       - name: Build iOS app
         run: flutter build ios --release --no-codesign --build-name=1.1.0 --build-number=${{ github.run_number }}
