@@ -66,36 +66,8 @@ jobs:
           cd ios
           pod install
 
-      - name: Patch Xcode project
-        run: |
-          PBX="ios/Runner.xcodeproj/project.pbxproj"
-
-          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 12.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' "$PBX"
-
-          # 1) TargetAttributes (Runner)
-          awk '1;/TargetAttributes = \{/{flag=1}
-              flag && /97C146ED1CF9000F007C117D/ { print; print "\t\t\t\tDevelopmentTeam = AAAAAAAAAA;"; flag=0; next }' "$PBX" > "$PBX.tmp" && mv "$PBX.tmp" "$PBX"
-
-          sed -i '' 's/DEVELOPMENT_TEAM = "";/DEVELOPMENT_TEAM = AAAAAAAAAA;/g' "$PBX"
-          grep -q 'DEVELOPMENT_TEAM = AAAAAAAAAA;' "$PBX" || \
-            sed -i '' 's/PRODUCT_NAME = "\$([^)]*)";/&\
-            \t\t\t\tDEVELOPMENT_TEAM = AAAAAAAAAA;\
-            \t\t\t\tCODE_SIGN_STYLE = Manual;\
-            \t\t\t\tPROVISIONING_PROFILE_SPECIFIER = "";\
-            \t\t\t\tCODE_SIGN_IDENTITY = "";\
-            \t\t\t\t"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "";/g' "$PBX"
-
-          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";/g' "$PBX"
-          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "";/g' "$PBX"
-
-          echo "---- sanity check ----"
-          grep -n 'DevelopmentTeam = ' "$PBX" || true
-          grep -n 'DEVELOPMENT_TEAM = ' "$PBX" || true
-
-
-
       - name: Build iOS app
-        run: flutter build ipa --release --no-codesign --build-name=1.1.0 --build-number=${{ github.run_number }}
+        run: flutter build ios --release --no-codesign --build-name=1.1.0 --build-number=${{ github.run_number }}
 
       - name: Check UUIDs
         run: |
@@ -133,6 +105,6 @@ jobs:
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           file: build/ios/iphoneos/FlutterIpaExport.ipa
-          tag: v${{ github.run_number }}
+          tag: v1.0.${{ github.run_number }}
           overwrite: true
           body: "This is first release"
