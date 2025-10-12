@@ -83,8 +83,7 @@ jobs:
       - name: Install CocoaPods
         run: |
           cd ios
-          pod repo-update
-          pod install --repo-update
+          pod install
 
       - name: Force no-codesign in xcconfig (Runner)
         run: |
