@@ -5,7 +5,7 @@ import 'package:image/image.dart' as img;
 import 'package:onnxruntime/onnxruntime.dart';
 
 class SegmentationService {
-  static Future<Uint8List> runSegmentation({
+  static Future<Uint8List> segmentFromPoint({
     required File imageFile,
     required Offset clickPoint,
     required ByteData encoderData,
