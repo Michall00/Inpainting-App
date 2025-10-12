@@ -46,25 +46,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
     final resultBytes = Uint8List.fromList(img.encodePng(resized));
     final tempFile = await ImageService.saveTempImage(resultBytes, 'input.png');
 
-    setState(() {
-      _imageFile = tempFile;
-      _imageWidth = resized.width;
-      _imageHeight = resized.height;
-      _points.clear();
-      _segmentationMask = null;
-      _previewMaskBytes = null;
-      _maskImage = img.Image(
-          width: resized.width, height: resized.height, numChannels: 1)
-        ..getBytes().fillRange(0, resized.width * resized.height, 255);
-    });
-    FirebaseAnalytics.instance.logEvent(
-      name: 'image_picked',
-      parameters: {
-        'width': _imageWidth!,
-        'height': _imageHeight!,
-        'source': 'gallery',
-      },
-    );
+    _startNewEditingSession(resized: resized, tempFile: tempFile);
   }
 
   Future<void> _saveImageToGallery(Uint8List imageBytes) async {
@@ -91,44 +73,43 @@ class _InpaintingPageState extends State<InpaintingPage> {
   }
 
   Future<void> _pickImageFromCamera() async {
-    try {
-      final picker = ImagePicker();
-      final pickedFile = await picker.pickImage(source: ImageSource.camera);
+    final picker = ImagePicker();
+    final pickedFile = await picker.pickImage(source: ImageSource.camera);
 
-      if (pickedFile == null) return;
+    if (pickedFile == null) return;
 
-      final file = File(pickedFile.path);
-      final resized = await ImageService.decodeAndResize(file, 1024);
-      if (resized == null) return;
+    final file = File(pickedFile.path);
+    final resized = await ImageService.decodeAndResize(file, 1024);
+    if (resized == null) return;
 
-      final resultBytes = Uint8List.fromList(img.encodePng(resized));
-      final tempFile =
-          await ImageService.saveTempImage(resultBytes, 'input.png');
+    final resultBytes = Uint8List.fromList(img.encodePng(resized));
+    final tempFile = await ImageService.saveTempImage(resultBytes, 'input.png');
 
-      setState(() {
-        _imageFile = tempFile;
-        _imageWidth = resized.width;
-        _imageHeight = resized.height;
-        _points.clear();
-        _segmentationMask = null;
-        _previewMaskBytes = null;
-        _maskImage = img.Image(
-            width: resized.width, height: resized.height, numChannels: 1)
+    _startNewEditingSession(resized: resized, tempFile: tempFile);
+  }
+
+  void _startNewEditingSession({
+    required img.Image resized,
+    required File tempFile,
+  }) {
+    final blank =
+        img.Image(width: resized.width, height: resized.height, numChannels: 1)
           ..getBytes().fillRange(0, resized.width * resized.height, 255);
-      });
 
-      FirebaseCrashlytics.instance.log("Image picked from camera");
-      FirebaseAnalytics.instance.logEvent(
-        name: 'image_picked',
-        parameters: {
-          'width': _imageWidth!,
-          'height': _imageHeight!,
-          'source': 'camera',
-        },
-      );
-    } catch (e, s) {
-      FirebaseCrashlytics.instance.recordError(e, s);
-    }
+    setState(() {
+      _imageFile = tempFile;
+      _imageWidth = resized.width;
+      _imageHeight = resized.height;
+
+      _lastTapImagePoint = null;
+      _outputBytes = null;
+      _previewMaskBytes = null;
+      _segmentationMask = null;
+      _points.clear();
+      _bbox = null;
+      _maskImage = blank;
+      _mode = InteractionMode.segment;
+    });
   }
 
   Future<void> _runSegmentationFromClick(Offset point) async {
@@ -159,7 +140,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
     FirebaseAnalytics.instance.logEvent(
       name: 'segmentation_completed',
       parameters: {
-        'duration_ms': durationMs,
+        'segmentation_duration_ms': durationMs,
       },
     );
 
@@ -307,6 +288,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
     final inpaintingEnd = DateTime.now();
     final durationMs = inpaintingEnd.difference(inpaintingStart).inMilliseconds;
 
+    final decoded = img.decodeImage(output)!;
+    final newTemp = await ImageService.saveTempImage(output, 'input.png');
+
     FirebaseAnalytics.instance.logEvent(
       name: 'inpainting_completed',
       parameters: {
@@ -314,12 +298,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       },
     );
 
-    setState(() {
-      _previewMaskBytes = null;
-      _points.clear();
-      _imageFile = null;
-      _outputBytes = output;
-    });
+    _startNewEditingSession(resized: decoded, tempFile: newTemp);
   }
 
   void _onShowBBoxFromMask() {
@@ -444,9 +423,12 @@ class _InpaintingPageState extends State<InpaintingPage> {
         ),
         const SizedBox(width: 12),
         FloatingActionButton(
-          onPressed: _outputBytes == null
+          onPressed: _imageFile == null
               ? null
-              : () => _saveImageToGallery(_outputBytes!),
+              : () async {
+                  final bytes = await _imageFile!.readAsBytes();
+                  await _saveImageToGallery(bytes);
+                },
           heroTag: 'save',
           tooltip: 'Zapisz do galerii',
           child: const Icon(Icons.save_alt),
