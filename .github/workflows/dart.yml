@@ -66,8 +66,28 @@ jobs:
           cd ios
           pod install
 
+      - name: Patch Xcode project for unsigned ios device build
+        run: |
+          PBX="ios/Runner.xcodeproj/project.pbxproj"
+
+          sed -i '' 's/IPHONEOS_DEPLOYMENT_TARGET = 12.0;/IPHONEOS_DEPLOYMENT_TARGET = 13.0;/g' "$PBX"
+
+          sed -i '' 's/DEVELOPMENT_TEAM = [A-Z0-9]\+;/DEVELOPMENT_TEAM = "";/g' "$PBX"
+
+          sed -i '' 's/"CODE_SIGN_IDENTITY\[sdk=iphoneos\*\]" = "iPhone Developer";/"CODE_SIGN_IDENTITY[sdk=iphoneos*]" = "";/g' "$PBX"
+          sed -i '' 's/CODE_SIGN_IDENTITY = "iPhone Developer";/CODE_SIGN_IDENTITY = "";/g' "$PBX"
+          
+          for f in ios/Flutter/Debug.xcconfig ios/Flutter/Release.xcconfig; do
+            echo 'CODE_SIGNING_ALLOWED = NO' >> "$f"
+            echo 'CODE_SIGNING_REQUIRED = NO' >> "$f"
+            echo 'CODE_SIGN_IDENTITY =' >> "$f"
+            echo 'PROVISIONING_PROFILE_SPECIFIER =' >> "$f"
+            echo 'DEVELOPMENT_TEAM =' >> "$f"
+          done
+
+
       - name: Build iOS app
-        run: flutter build ios --release --no-codesign --build-name=1.1.0 --build-number=${{ github.run_number }}
+        run: flutter build ios --release --no-codesign --build-name=1.1.0 --build-number=0.0.${{ github.run_number }}
 
       - name: Check UUIDs
         run: |
