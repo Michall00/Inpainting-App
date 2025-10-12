@@ -71,6 +71,27 @@ jobs:
           xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -showBuildSettings | \
           egrep "CODE_SIGN|DEVELOPMENT_TEAM|PRODUCT_BUNDLE_IDENTIFIER"
 
+      - name: Force no-codesign in xcconfig (Runner)
+        run: |
+          for cfg in Debug Release Profile; do
+            xc="ios/Flutter/${cfg}.xcconfig"
+            {
+              echo "";
+              echo "CODE_SIGNING_ALLOWED=NO";
+              echo "CODE_SIGNING_REQUIRED=NO";
+              echo "CODE_SIGN_STYLE=Automatic";
+              echo "DEVELOPMENT_TEAM=";
+              echo "PROVISIONING_PROFILE_SPECIFIER=";
+            } >> "$xc"
+          done
+
+        
+      - name: Show build settings after no-codesign (sanity check)
+        run: |
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -showBuildSettings | \
+          egrep "CODE_SIGN|DEVELOPMENT_TEAM|PRODUCT_BUNDLE_IDENTIFIER"
+
+
       - name: Build iOS app
         run: flutter build ios --release --no-codesign --build-name=1.1.0 --build-number=${{ github.run_number }}
 
