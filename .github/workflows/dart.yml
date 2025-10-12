@@ -100,8 +100,15 @@ jobs:
       - name: Flutter generate Xcode project
         run: flutter build ios --release --no-codesign --config-only
 
-      - name: Build with xcodebuild (no signing)
+      - name: Resolve SPM
         run: |
+          xcodebuild -resolvePackageDependencies \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner
+
+      - name: Build with xcodebuild (no signing, verbose)
+        run: |
+          set -euo pipefail
           xcodebuild \
             -workspace ios/Runner.xcworkspace \
             -scheme Runner \
@@ -115,7 +122,22 @@ jobs:
             CODE_SIGN_IDENTITY= \
             DEVELOPMENT_TEAM= \
             PROVISIONING_PROFILE_SPECIFIER= \
-            build
+            CODE_SIGN_ENTITLEMENTS= \
+            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+            OTHER_CODE_SIGN_FLAGS= \
+            SWIFT_COMPILATION_MODE=wholemodule \
+            ONLY_ACTIVE_ARCH=NO \
+            build | tee xcodebuild.log
+
+          echo "———— Errors ————"
+          (grep -n -E "error:|fatal error:" -n xcodebuild.log || true)
+
+      - name: Upload Xcode log (artifact)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
 
 
       - name: Check UUIDs
