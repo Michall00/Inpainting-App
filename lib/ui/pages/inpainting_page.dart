@@ -58,16 +58,16 @@ class _InpaintingPageState extends State<InpaintingPage> {
       );
       if (result['isSuccess'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Zapisano obraz do galerii')),
+          const SnackBar(content: Text('Image saved to gallery')),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nie udało się zapisać obrazu')),
+          const SnackBar(content: Text('Error saving image to gallery')),
         );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Błąd zapisu: $e')),
+        SnackBar(content: Text('Error saving image: $e')),
       );
     }
   }
@@ -113,7 +113,16 @@ class _InpaintingPageState extends State<InpaintingPage> {
   }
 
   Future<void> _runSegmentationFromClick(Offset point) async {
-    if (_imageFile == null) return;
+    if (_imageFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(".")),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Starting segmentation from point...")),
+    );
     final encoderData = await rootBundle.load('assets/encoder.onnx');
     final decoderData = await rootBundle.load('assets/decoder.onnx');
 
@@ -222,17 +231,25 @@ class _InpaintingPageState extends State<InpaintingPage> {
   }
 
   Future<void> _onSegmentPressed() async {
-    if (_imageFile == null) return;
+    if (_imageFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("No image selected.")),
+      );
+      return;
+    }
 
     if (_mode == InteractionMode.segment) {
       if (_lastTapImagePoint == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content:
-                  Text('Kliknij na obiekt, aby wskazać punkt segmentacji')),
+              content: Text(
+                  "Click on the object in the image to start segmentation")),
         );
         return;
       }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Segmentation point: $_lastTapImagePoint")),
+      );
       await _runSegmentationFromClick(_lastTapImagePoint!);
       return;
     }
@@ -241,19 +258,22 @@ class _InpaintingPageState extends State<InpaintingPage> {
     if (box == null) {
       if (_points.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Najpierw narysuj maskę')),
+          const SnackBar(content: Text("First draw the mask")),
         );
         return;
       }
       box = bboxFromPoints(_points);
       if (box.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nie udało się wyznaczyć bboxa')),
+          const SnackBar(content: Text("Failed to determine bbox")),
         );
         return;
       }
     }
 
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Segmentation from bbox: $box")),
+    );
     await _runSegmentationFromBbox(box);
   }
 
@@ -305,7 +325,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
   void _onShowBBoxFromMask() {
     if (_points.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Najpierw narysuj maskę')),
+        const SnackBar(content: Text('First draw the mask')),
       );
       return;
     }
@@ -313,7 +333,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
     final box = bboxFromPoints(_points);
     if (box.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nie udało się wyznaczyć bboxa')),
+        const SnackBar(content: Text('Failed to determine bbox')),
       );
       return;
     }
@@ -369,6 +389,12 @@ class _InpaintingPageState extends State<InpaintingPage> {
                   final imagePoint =
                       Offset(local.dx * scaleX, local.dy * scaleY);
 
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content:
+                            Text("Clicked on image at point: $imagePoint")),
+                  );
+
                   setState(() {
                     _lastTapImagePoint = imagePoint;
                     _bbox = null;
@@ -420,7 +446,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         FloatingActionButton(
           onPressed: _pickImageFromCamera,
           heroTag: 'camera',
-          tooltip: 'Zrób zdjęcie',
+          tooltip: 'Take a photo',
           child: const Icon(Icons.camera_alt),
         ),
         const SizedBox(width: 12),
@@ -438,7 +464,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
                   await _saveImageToGallery(bytes);
                 },
           heroTag: 'save',
-          tooltip: 'Zapisz do galerii',
+          tooltip: 'Save to gallery',
           child: const Icon(Icons.save_alt),
         ),
         const SizedBox(width: 12),
@@ -462,11 +488,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
           onPressed: _onSegmentPressed,
           heroTag: 'segment',
           label: Text(_mode == InteractionMode.draw
-              ? 'Segmentuj (bbox)'
-              : 'Segmentuj (punkt)'),
-          icon: Icon(_mode == InteractionMode.draw
-              ? Icons.crop_square
-              : Icons.touch_app),
+              ? 'Segment (bbox)'
+              : 'Segment (point)'),
+          icon: const Icon(Icons.crop_square),
         ),
       ],
     );
@@ -489,7 +513,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
             );
           }
           if (_imageFile == null) {
-            return const Center(child: Text("Brak zdjęcia"));
+            return const Center(child: Text("No image selected"));
           }
           return _buildImageStack();
         },
