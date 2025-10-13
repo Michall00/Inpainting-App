@@ -40,3 +40,38 @@ class BBoxPainter extends CustomPainter {
   bool shouldRepaint(covariant BBoxPainter oldDelegate) =>
       oldDelegate.box != box;
 }
+
+class SquarePointPainter extends CustomPainter {
+  final Offset point;
+  final double size;
+  final Color color;
+
+  const SquarePointPainter({
+    required this.point,
+    this.size = 10.0,
+    this.color = Colors.amber,
+  });
+
+  @override
+  void paint(Canvas canvas, Size canvasSize) {
+    if (!point.isFinite) return;
+
+    final rect = Rect.fromCenter(center: point, width: size, height: size);
+    final paintFill = Paint()
+      ..color = color.withValues(alpha: 0.9)
+      ..style = PaintingStyle.fill;
+    final paintBorder = Paint()
+      ..color = Colors.black.withValues(alpha: 0.7)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    canvas.drawRect(rect, paintFill);
+    canvas.drawRect(rect, paintBorder);
+  }
+
+  @override
+  bool shouldRepaint(SquarePointPainter oldDelegate) =>
+      oldDelegate.point != point ||
+      oldDelegate.size != size ||
+      oldDelegate.color != color;
+}

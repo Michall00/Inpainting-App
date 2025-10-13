@@ -26,13 +26,13 @@ class _InpaintingPageState extends State<InpaintingPage> {
   int? _imageWidth;
   int? _imageHeight;
   Uint8List? _previewMaskBytes;
-  final List<Offset> _points = [];
-  Rect? _bbox;
   Uint8List? _segmentationMask;
-  final GlobalKey _imageKey = GlobalKey();
   Uint8List? _outputBytes;
+  final List<Offset> _points = [];
+  final GlobalKey _imageKey = GlobalKey();
   InteractionMode _mode = InteractionMode.segment;
   Offset? _lastTapImagePoint;
+  Rect? _bbox;
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -162,6 +162,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       _segmentationMask = mask;
       _maskImage = decodedMask;
       _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
+      _lastTapImagePoint = null;
     });
   }
 
@@ -368,8 +369,10 @@ class _InpaintingPageState extends State<InpaintingPage> {
                   final imagePoint =
                       Offset(local.dx * scaleX, local.dy * scaleY);
 
-                  _lastTapImagePoint = imagePoint;
-                  _runSegmentationFromClick(imagePoint);
+                  setState(() {
+                    _lastTapImagePoint = imagePoint;
+                    _bbox = null;
+                  });
                 }
               },
               onPanUpdate: (details) {
@@ -392,6 +395,11 @@ class _InpaintingPageState extends State<InpaintingPage> {
               ),
             ),
             if (_bbox != null) CustomPaint(painter: BBoxPainter(_bbox!)),
+            if (_lastTapImagePoint != null && _mode == InteractionMode.segment)
+              CustomPaint(
+                painter:
+                    SquarePointPainter(point: _lastTapImagePoint!, size: 12.0),
+              ),
           ],
         ),
       ),
@@ -440,6 +448,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
               _mode = _mode == InteractionMode.draw
                   ? InteractionMode.segment
                   : InteractionMode.draw;
+              if (_mode == InteractionMode.draw) {
+                _lastTapImagePoint = null;
+              }
             });
           },
           heroTag: 'mode',
