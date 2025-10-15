@@ -29,11 +29,10 @@ class _InpaintingPageState extends State<InpaintingPage> {
   Uint8List? _outputBytes;
   final List<Offset> _points = [];
   final GlobalKey _imageKey = GlobalKey();
-  InteractionMode _mode = InteractionMode.segment;
+  InteractionMode _mode = InteractionMode.point;
   Offset? _lastTapImagePoint;
   Rect? _bbox;
-  Offset? _pendingSegmentationPoint;
-  Rect? _pendingSegmentationBBox;
+  Size? _canvasSize;
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -102,16 +101,15 @@ class _InpaintingPageState extends State<InpaintingPage> {
       _imageWidth = resized.width;
       _imageHeight = resized.height;
 
-      _lastTapImagePoint = null;
       _outputBytes = null;
       _previewMaskBytes = null;
       _segmentationMask = null;
-      _points.clear();
-      _bbox = null;
       _maskImage = blank;
-      _mode = InteractionMode.segment;
-      _pendingSegmentationPoint = null;
-      _pendingSegmentationBBox = null;
+      _points.clear();
+      _lastTapImagePoint = null;
+      _bbox = null;
+      _canvasSize = null;
+      _mode = InteractionMode.point;
     });
   }
 
@@ -182,8 +180,6 @@ class _InpaintingPageState extends State<InpaintingPage> {
         _segmentationMask = mask;
         _maskImage = decodedMask;
         _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
-        _pendingSegmentationPoint = null;
-        _pendingSegmentationBBox = null;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -257,8 +253,6 @@ class _InpaintingPageState extends State<InpaintingPage> {
         _segmentationMask = mask;
         _maskImage = decodedMask;
         _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
-        _pendingSegmentationPoint = null;
-        _pendingSegmentationBBox = null;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -285,7 +279,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       'Segment button pressed. mode=$_mode, lastPoint=$_lastTapImagePoint, bbox=$_bbox',
     );
 
-    if (_mode == InteractionMode.segment) {
+    if (_mode == InteractionMode.point) {
       if (_lastTapImagePoint == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -295,10 +289,6 @@ class _InpaintingPageState extends State<InpaintingPage> {
         return;
       }
       final point = _lastTapImagePoint!;
-      setState(() {
-        _pendingSegmentationPoint = point;
-        _pendingSegmentationBBox = null;
-      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Segmentation point: $point")),
       );
@@ -323,15 +313,50 @@ class _InpaintingPageState extends State<InpaintingPage> {
       }
     }
 
+    final canvasSize = _canvasSize;
+    if (canvasSize == null ||
+        canvasSize.width == 0 ||
+        canvasSize.height == 0 ||
+        _imageWidth == null ||
+        _imageHeight == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Canvas size unavailable for bbox.")),
+      );
+      return;
+    }
+
+    if (box.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Failed to determine bbox")),
+      );
+      return;
+    }
+
+    final scaleX = _imageWidth! / canvasSize.width;
+    final scaleY = _imageHeight! / canvasSize.height;
+    final imageRect = Rect.fromLTRB(
+      ((box.left.clamp(0.0, canvasSize.width)) * scaleX)
+          .clamp(0.0, _imageWidth!.toDouble())
+          .toDouble(),
+      ((box.top.clamp(0.0, canvasSize.height)) * scaleY)
+          .clamp(0.0, _imageHeight!.toDouble())
+          .toDouble(),
+      ((box.right.clamp(0.0, canvasSize.width)) * scaleX)
+          .clamp(0.0, _imageWidth!.toDouble())
+          .toDouble(),
+      ((box.bottom.clamp(0.0, canvasSize.height)) * scaleY)
+          .clamp(0.0, _imageHeight!.toDouble())
+          .toDouble(),
+    );
+
     setState(() {
-      _pendingSegmentationPoint = null;
-      _pendingSegmentationBBox = box;
+      _bbox = box;
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Segmentation from bbox: $box")),
     );
-    await _runSegmentationFromBbox(box);
+    await _runSegmentationFromBbox(imageRect);
   }
 
   Future<void> _runInpainting() async {
@@ -396,6 +421,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         final scale = (maxW / imgW < maxH / imgH) ? maxW / imgW : maxH / imgH;
         final drawW = imgW * scale;
         final drawH = imgH * scale;
+        _canvasSize = Size(drawW, drawH);
 
         return Center(
           child: SizedBox(
@@ -415,7 +441,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
                 GestureDetector(
                   behavior: HitTestBehavior.deferToChild,
                   onTapDown: (details) {
-                    if (_mode != InteractionMode.segment) return;
+                    if (_mode != InteractionMode.point) return;
 
                     final box = _imageKey.currentContext?.findRenderObject()
                         as RenderBox?;
@@ -444,26 +470,32 @@ class _InpaintingPageState extends State<InpaintingPage> {
                     setState(() {
                       _lastTapImagePoint = imagePoint;
                       _bbox = null;
-                      _pendingSegmentationPoint = null;
-                      _pendingSegmentationBBox = null;
                     });
                   },
                   onPanUpdate: (details) {
                     if (_mode == InteractionMode.draw && _maskImage != null) {
                       final local = details.localPosition;
-                      final x = (local.dx * (_maskImage!.width / drawW))
+                      final clamped = Offset(
+                        local.dx.clamp(0.0, drawW).toDouble(),
+                        local.dy.clamp(0.0, drawH).toDouble(),
+                      );
+                      final x = (clamped.dx * (_maskImage!.width / drawW))
                           .toInt()
                           .clamp(0, _maskImage!.width - 1);
-                      final y = (local.dy * (_maskImage!.height / drawH))
+                      final y = (clamped.dy * (_maskImage!.height / drawH))
                           .toInt()
                           .clamp(0, _maskImage!.height - 1);
                       _maskImage!.setPixelRgba(x, y, 0, 0, 0, 255);
-                      setState(() => _points.add(local));
+                      setState(() {
+                        _points.add(clamped);
+                        final newBox = bboxFromPoints(_points);
+                        _bbox = newBox.isEmpty ? null : newBox;
+                      });
                     }
                   },
                   onPanEnd: (_) {
                     if (_mode == InteractionMode.draw) {
-                      _points.add(Offset.infinite);
+                      setState(() => _points.add(Offset.infinite));
                     }
                   },
                   child: CustomPaint(
@@ -471,34 +503,24 @@ class _InpaintingPageState extends State<InpaintingPage> {
                     size: Size(drawW, drawH),
                   ),
                 ),
-                if (_bbox != null) CustomPaint(painter: BBoxPainter(_bbox!)),
-                if (_pendingSegmentationBBox != null)
-                  CustomPaint(
-                    painter: BBoxPainter(
-                      _pendingSegmentationBBox!,
-                      color: Colors.blueAccent,
+                if (_bbox != null)
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: BBoxPainter(_bbox!),
                     ),
                   ),
-                if (_pendingSegmentationPoint != null)
-                  CustomPaint(
-                    painter: SquarePointPainter(
-                      point: _pendingSegmentationPoint!,
-                      imageSize: Size(
-                          _imageWidth!.toDouble(), _imageHeight!.toDouble()),
-                      size: 16.0,
-                      color: Colors.blueAccent,
+                if (_lastTapImagePoint != null)
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: SquarePointPainter(
+                        point: _lastTapImagePoint!,
+                        imageSize: Size(
+                            _imageWidth!.toDouble(), _imageHeight!.toDouble()),
+                        size: 16.0,
+                        color: Colors.blueAccent,
+                      ),
                     ),
                   )
-                else if (_lastTapImagePoint != null &&
-                    _mode == InteractionMode.segment)
-                  CustomPaint(
-                    painter: SquarePointPainter(
-                      point: _lastTapImagePoint!,
-                      imageSize: Size(
-                          _imageWidth!.toDouble(), _imageHeight!.toDouble()),
-                      size: 12.0,
-                    ),
-                  ),
               ],
             ),
           ),
@@ -547,13 +569,11 @@ class _InpaintingPageState extends State<InpaintingPage> {
           onPressed: () {
             setState(() {
               _mode = _mode == InteractionMode.draw
-                  ? InteractionMode.segment
+                  ? InteractionMode.point
                   : InteractionMode.draw;
               if (_mode == InteractionMode.draw) {
                 _lastTapImagePoint = null;
               }
-              _pendingSegmentationPoint = null;
-              _pendingSegmentationBBox = null;
             });
           },
           heroTag: 'mode',
@@ -561,13 +581,10 @@ class _InpaintingPageState extends State<InpaintingPage> {
               _mode == InteractionMode.draw ? Icons.brush : Icons.touch_app),
         ),
         const SizedBox(width: 12),
-        FloatingActionButton.extended(
+        FloatingActionButton(
           onPressed: _onSegmentPressed,
           heroTag: 'segment',
-          label: Text(_mode == InteractionMode.draw
-              ? 'Segment (bbox)'
-              : 'Segment (point)'),
-          icon: const Icon(Icons.crop_square),
+          child: const Icon(Icons.crop_square),
         ),
       ],
     );
@@ -601,4 +618,4 @@ class _InpaintingPageState extends State<InpaintingPage> {
   }
 }
 
-enum InteractionMode { draw, segment }
+enum InteractionMode { draw, point }
