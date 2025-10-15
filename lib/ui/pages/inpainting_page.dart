@@ -33,6 +33,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
   Offset? _lastTapImagePoint;
   Rect? _bbox;
   Offset? _pendingSegmentationPoint;
+  Rect? _pendingSegmentationBBox;
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -109,6 +110,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
       _bbox = null;
       _maskImage = blank;
       _mode = InteractionMode.segment;
+      _pendingSegmentationPoint = null;
+      _pendingSegmentationBBox = null;
     });
   }
 
@@ -180,6 +183,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         _maskImage = decodedMask;
         _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
         _pendingSegmentationPoint = null;
+        _pendingSegmentationBBox = null;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -254,6 +258,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         _maskImage = decodedMask;
         _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
         _pendingSegmentationPoint = null;
+        _pendingSegmentationBBox = null;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -292,6 +297,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       final point = _lastTapImagePoint!;
       setState(() {
         _pendingSegmentationPoint = point;
+        _pendingSegmentationBBox = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Segmentation point: $point")),
@@ -319,6 +325,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
 
     setState(() {
       _pendingSegmentationPoint = null;
+      _pendingSegmentationBBox = box;
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -371,39 +378,6 @@ class _InpaintingPageState extends State<InpaintingPage> {
     );
 
     _startNewEditingSession(resized: decoded, tempFile: newTemp);
-  }
-
-  void _onShowBBoxFromMask() {
-    if (_points.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('First draw the mask')),
-      );
-      return;
-    }
-
-    final box = bboxFromPoints(_points);
-    if (box.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to determine bbox')),
-      );
-      return;
-    }
-
-    final renderBox =
-        _imageKey.currentContext?.findRenderObject() as RenderBox?;
-    final overlaySize = renderBox?.size;
-    final clamped = (overlaySize == null)
-        ? box
-        : Rect.fromLTRB(
-            box.left.clamp(0.0, overlaySize.width),
-            box.top.clamp(0.0, overlaySize.height),
-            box.right.clamp(0.0, overlaySize.width),
-            box.bottom.clamp(0.0, overlaySize.height),
-          );
-
-    setState(() {
-      _bbox = clamped;
-    });
   }
 
   Widget _buildImageStack() {
@@ -471,6 +445,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
                   setState(() {
                     _lastTapImagePoint = imagePoint;
                     _bbox = null;
+                    _pendingSegmentationPoint = null;
+                    _pendingSegmentationBBox = null;
                   });
                 }
               },
@@ -493,7 +469,17 @@ class _InpaintingPageState extends State<InpaintingPage> {
                 size: Size(width, height),
               ),
             ),
-            if (_bbox != null) CustomPaint(painter: BBoxPainter(_bbox!)),
+            if (_bbox != null)
+              CustomPaint(
+                painter: BBoxPainter(_bbox!),
+              ),
+            if (_pendingSegmentationBBox != null)
+              CustomPaint(
+                painter: BBoxPainter(
+                  _pendingSegmentationBBox!,
+                  color: Colors.blueAccent,
+                ),
+              ),
             if (_pendingSegmentationPoint != null)
               CustomPaint(
                 painter: SquarePointPainter(
@@ -569,6 +555,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
               if (_mode == InteractionMode.draw) {
                 _lastTapImagePoint = null;
               }
+              _pendingSegmentationPoint = null;
+              _pendingSegmentationBBox = null;
             });
           },
           heroTag: 'mode',
