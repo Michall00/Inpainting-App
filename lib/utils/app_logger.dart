@@ -7,25 +7,31 @@ import 'package:flutter/foundation.dart';
 class AppLogger {
   const AppLogger._();
 
-  static void log(String message, {String name = 'InpaintingApp'}) {
-    if (kDebugMode) {
-      debugPrint('[$name] $message');
+  static const String _defaultName = 'InpaintingApp';
+
+  static FirebaseCrashlytics get _crashlytics {
+    if (Firebase.apps.isEmpty) {
+      throw StateError(
+        'Firebase.initializeApp must be called before using Crashlytics.',
+      );
     }
-    developer.log(message, name: name);
-    _safeCrashlytics(() {
-      FirebaseCrashlytics.instance.log('[$name] $message');
-    });
+    return FirebaseCrashlytics.instance;
   }
 
-  static void error(
-    String message,
-    Object error,
-    StackTrace stackTrace, {
-    String name = 'InpaintingApp',
+  static void log(
+    String message, {
+    String name = _defaultName,
+    bool sendToCrashlytics = true,
+    Object? error,
+    StackTrace? stackTrace,
   }) {
+    final formattedMessage =
+        error == null ? message : '$message | error: ${error.toString()}';
     if (kDebugMode) {
-      debugPrint('[$name][error] $message: $error');
-      debugPrint(stackTrace.toString());
+      debugPrint('[$name] $formattedMessage');
+      if (stackTrace != null) {
+        debugPrint(stackTrace.toString());
+      }
     }
     developer.log(
       message,
@@ -33,23 +39,59 @@ class AppLogger {
       error: error,
       stackTrace: stackTrace,
     );
-    _safeCrashlytics(() {
-      FirebaseCrashlytics.instance.recordError(
-        error,
-        stackTrace,
-        reason: message,
-      );
-    });
+    if (sendToCrashlytics) {
+      _crashlytics.log('[$name] $formattedMessage');
+    }
   }
 
-  static void _safeCrashlytics(void Function() action) {
-    if (Firebase.apps.isEmpty) {
-      return;
+  static void error(
+    String message,
+    Object error,
+    StackTrace stackTrace, {
+    String name = _defaultName,
+    bool fatal = false,
+  }) {
+    log(
+      message,
+      name: name,
+      error: error,
+      stackTrace: stackTrace,
+    );
+    recordError(
+      error,
+      stackTrace,
+      reason: message,
+      fatal: fatal,
+    );
+  }
+
+  static void setKey(String key, Object? value) {
+    final crashlytics = _crashlytics;
+    if (value is num || value is bool || value is String) {
+      crashlytics.setCustomKey(key, value);
+    } else if (value == null) {
+      crashlytics.setCustomKey(key, 'null');
+    } else {
+      crashlytics.setCustomKey(key, value.toString());
     }
-    try {
-      action();
-    } catch (_) {
-      // Ignore Crashlytics failures in debug environments.
-    }
+  }
+
+  static void recordFlutterError(FlutterErrorDetails details) {
+    _crashlytics.recordFlutterError(details);
+  }
+
+  static void recordError(
+    Object error,
+    StackTrace stackTrace, {
+    String? reason,
+    bool fatal = false,
+  }) {
+    final crashlytics = _crashlytics;
+    crashlytics.recordError(
+      error,
+      stackTrace,
+      reason: reason,
+      fatal: fatal,
+    );
   }
 }
