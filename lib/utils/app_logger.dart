@@ -68,7 +68,7 @@ class AppLogger {
   static void setKey(String key, Object? value) {
     final crashlytics = _crashlytics;
     if (value is num || value is bool || value is String) {
-      crashlytics.setCustomKey(key, value);
+      crashlytics.setCustomKey(key, value ?? 'null');
     } else if (value == null) {
       crashlytics.setCustomKey(key, 'null');
     } else {

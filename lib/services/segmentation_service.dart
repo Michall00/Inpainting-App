@@ -171,17 +171,12 @@ class SegmentationService {
     final x1 = (bboxPx.right).clamp(0.0, image.width.toDouble()) * sx;
     final y1 = (bboxPx.bottom).clamp(0.0, image.height.toDouble()) * sy;
 
-    final boxes = OrtValueTensor.createTensorWithDataList(
+    final pointCoords = OrtValueTensor.createTensorWithDataList(
       Float32List.fromList([x0, y0, x1, y1]),
       [1, 2, 2],
     );
-
-    final pointCoords = OrtValueTensor.createTensorWithDataList(
-      Float32List.fromList([0.0, 0.0, 0.0, 0.0]),
-      [1, 2, 2],
-    );
     final pointLabels = OrtValueTensor.createTensorWithDataList(
-      Float32List.fromList([-1.0, -1.0]),
+      Float32List.fromList([2.0, 3.0]),
       [1, 2],
     );
 
@@ -209,7 +204,6 @@ class SegmentationService {
         'image_embeddings': imageEmbeddings,
         'point_coords': pointCoords,
         'point_labels': pointLabels,
-        'boxes': boxes,
         'mask_input': maskInput,
         'has_mask_input': hasMaskInput,
         'orig_im_size': origImSize,
@@ -245,7 +239,6 @@ class SegmentationService {
         }
       }
     } finally {
-      boxes.release();
       pointCoords.release();
       pointLabels.release();
       maskInput.release();
