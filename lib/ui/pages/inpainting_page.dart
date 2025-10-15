@@ -32,6 +32,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
   InteractionMode _mode = InteractionMode.segment;
   Offset? _lastTapImagePoint;
   Rect? _bbox;
+  Offset? _pendingSegmentationPoint;
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -152,6 +153,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         name: 'segmentation_completed',
         parameters: {
           'segmentation_duration_ms': durationMs,
+          'model': 'mobileSAM'
         },
       );
       AppLogger.log(
@@ -177,7 +179,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         _segmentationMask = mask;
         _maskImage = decodedMask;
         _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
-        _lastTapImagePoint = null;
+        _pendingSegmentationPoint = null;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -225,6 +227,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         name: 'segmentation_completed',
         parameters: {
           'segmentation_duration_ms': durationMs,
+          'model': 'mobileSAM'
         },
       );
       AppLogger.log(
@@ -250,6 +253,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         _segmentationMask = mask;
         _maskImage = decodedMask;
         _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
+        _pendingSegmentationPoint = null;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -285,10 +289,14 @@ class _InpaintingPageState extends State<InpaintingPage> {
         );
         return;
       }
+      final point = _lastTapImagePoint!;
+      setState(() {
+        _pendingSegmentationPoint = point;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Segmentation point: $_lastTapImagePoint")),
+        SnackBar(content: Text("Segmentation point: $point")),
       );
-      await _runSegmentationFromClick(_lastTapImagePoint!);
+      await _runSegmentationFromClick(point);
       return;
     }
 
@@ -308,6 +316,10 @@ class _InpaintingPageState extends State<InpaintingPage> {
         return;
       }
     }
+
+    setState(() {
+      _pendingSegmentationPoint = null;
+    });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Segmentation from bbox: $box")),
@@ -354,6 +366,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       name: 'inpainting_completed',
       parameters: {
         'inpainting_duration_ms': durationMs,
+        'model': 'migan',
       },
     );
 
@@ -474,15 +487,29 @@ class _InpaintingPageState extends State<InpaintingPage> {
               ),
             ),
             if (_bbox != null) CustomPaint(painter: BBoxPainter(_bbox!)),
-            if (_lastTapImagePoint != null && _mode == InteractionMode.segment)
+            if (_pendingSegmentationPoint != null)
               CustomPaint(
                 painter: SquarePointPainter(
-                    point: _lastTapImagePoint!,
-                    imageSize: Size(
-                      _imageWidth!.toDouble(),
-                      _imageHeight!.toDouble(),
-                    ),
-                    size: 12.0),
+                  point: _pendingSegmentationPoint!,
+                  imageSize: Size(
+                    _imageWidth!.toDouble(),
+                    _imageHeight!.toDouble(),
+                  ),
+                  size: 16.0,
+                  color: Colors.blueAccent,
+                ),
+              )
+            else if (_lastTapImagePoint != null &&
+                _mode == InteractionMode.segment)
+              CustomPaint(
+                painter: SquarePointPainter(
+                  point: _lastTapImagePoint!,
+                  imageSize: Size(
+                    _imageWidth!.toDouble(),
+                    _imageHeight!.toDouble(),
+                  ),
+                  size: 12.0,
+                ),
               ),
           ],
         ),
