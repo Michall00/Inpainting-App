@@ -179,6 +179,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       setState(() {
         _segmentationMask = mask;
         _maskImage = decodedMask;
+        _points.clear();
         _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
       });
     } catch (error, stackTrace) {
@@ -252,6 +253,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       setState(() {
         _segmentationMask = mask;
         _maskImage = decodedMask;
+        _points.clear();
         _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
       });
     } catch (error, stackTrace) {
@@ -499,7 +501,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
                     }
                   },
                   child: CustomPaint(
-                    painter: MaskPainter(_points),
+                    painter:
+                        _segmentationMask == null ? MaskPainter(_points) : null,
                     size: Size(drawW, drawH),
                   ),
                 ),
