@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
@@ -38,6 +39,10 @@ class _InpaintingPageState extends State<InpaintingPage> {
   Rect? _bbox;
   Size? _canvasSize;
 
+  static const double _baseBrushSceneWidth = 20.0;
+
+  bool get _hasManualDrawing =>
+      _points.any((offset) => offset.isFinite);
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
@@ -97,8 +102,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
     required File tempFile,
   }) {
     final blank =
-        img.Image(width: resized.width, height: resized.height, numChannels: 1)
-          ..getBytes().fillRange(0, resized.width * resized.height, 255);
+        _createBlankMaskImage(resized.width, resized.height);
 
     _transformationController.value = Matrix4.identity();
     setState(() {
@@ -200,6 +204,26 @@ class _InpaintingPageState extends State<InpaintingPage> {
     }
   }
 
+  img.Image _createBlankMaskImage(int width, int height) {
+    final blank =
+        img.Image(width: width, height: height, numChannels: 1);
+    blank.getBytes().fillRange(0, width * height, 255);
+    return blank;
+  }
+
+  void _clearManualMask() {
+    if (_imageWidth == null || _imageHeight == null) return;
+    setState(() {
+      _points.clear();
+      _bbox = null;
+      if (_segmentationMask != null) {
+        _maskImage = img.decodeImage(_segmentationMask!)!;
+      } else {
+        _maskImage = _createBlankMaskImage(_imageWidth!, _imageHeight!);
+      }
+    });
+  }
+
   Future<void> _runSegmentationFromBbox(Rect bbox) async {
     if (_imageFile == null) return;
     AppLogger.log('Segmentation from bbox requested: $bbox');
@@ -289,19 +313,51 @@ class _InpaintingPageState extends State<InpaintingPage> {
     );
   }
 
-  void _addStrokePoint(Offset scenePoint, double drawW, double drawH) {
+  double get _currentViewerScale =>
+      _transformationController.value.getMaxScaleOnAxis();
+
+  double _currentBrushSceneWidth(double drawW) {
+    final scale = _currentViewerScale;
+    final width = _baseBrushSceneWidth / (scale <= 0 ? 1.0 : scale);
+    return width.clamp(2.0, _baseBrushSceneWidth * 2);
+  }
+
+  void _addStrokePoint(
+    Offset scenePoint,
+    double drawW,
+    double drawH,
+    double brushSceneWidth,
+  ) {
     if (_maskImage == null) return;
     final clamped = Offset(
       scenePoint.dx.clamp(0.0, drawW),
       scenePoint.dy.clamp(0.0, drawH),
     );
-    final x = (clamped.dx * (_maskImage!.width / drawW))
-        .toInt()
-        .clamp(0, _maskImage!.width - 1);
-    final y = (clamped.dy * (_maskImage!.height / drawH))
-        .toInt()
-        .clamp(0, _maskImage!.height - 1);
-    _maskImage!.setPixelRgba(x, y, 0, 0, 0, 255);
+    final widthScale = _maskImage!.width / drawW;
+    final heightScale = _maskImage!.height / drawH;
+    final centerX =
+        (clamped.dx * widthScale).round().clamp(0, _maskImage!.width - 1);
+    final centerY =
+        (clamped.dy * heightScale).round().clamp(0, _maskImage!.height - 1);
+
+    final brushRadiusScene =
+        math.max(1.0, brushSceneWidth / 2.0);
+    final radiusX =
+        math.max(1, (brushRadiusScene * widthScale).round());
+    final radiusY =
+        math.max(1, (brushRadiusScene * heightScale).round());
+
+    for (int dy = -radiusY; dy <= radiusY; dy++) {
+      for (int dx = -radiusX; dx <= radiusX; dx++) {
+        final normX = dx / radiusX;
+        final normY = dy / radiusY;
+        if ((normX * normX + normY * normY) > 1.0) continue;
+        final nx = (centerX + dx).clamp(0, _maskImage!.width - 1);
+        final ny = (centerY + dy).clamp(0, _maskImage!.height - 1);
+        _maskImage!.setPixelRgba(nx, ny, 0, 0, 0, 255);
+      }
+    }
+
     _points.add(clamped);
     final newBox = bboxFromPoints(_points);
     _bbox = newBox.isEmpty ? null : newBox;
@@ -472,104 +528,123 @@ class _InpaintingPageState extends State<InpaintingPage> {
               transformationController: _transformationController,
               minScale: 1.0,
               maxScale: 5.0,
-              panEnabled: _mode != InteractionMode.draw,
+              panEnabled: false,
               clipBehavior: Clip.none,
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: Image(
-                      key: _imageKey,
-                      image: _previewMaskBytes != null
-                          ? MemoryImage(_previewMaskBytes!)
-                          : FileImage(_imageFile!) as ImageProvider,
-                      fit: BoxFit.contain,
-                    ),
-                  ),
-                  Positioned.fill(
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTapDown: _mode == InteractionMode.point
-                          ? (details) {
-                              if (_imageWidth == null ||
-                                  _imageHeight == null) return;
-                              final scenePoint =
-                                  _globalToScene(details.globalPosition);
-                              final size = _canvasSize;
-                              if (scenePoint == null || size == null) return;
-                              final px = (scenePoint.dx *
-                                      (_imageWidth! / size.width))
-                                  .clamp(0.0, _imageWidth!.toDouble());
-                              final py = (scenePoint.dy *
-                                      (_imageHeight! / size.height))
-                                  .clamp(0.0, _imageHeight!.toDouble());
-                              final imagePoint = Offset(px, py);
-
-                              AppLogger.log(
-                                  'Tap on image (scene=$scenePoint → image=$imagePoint) drawSize=($drawW,$drawH)');
-
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text(
-                                      "Clicked on image at point: ${imagePoint.dx.toStringAsFixed(1)}, ${imagePoint.dy.toStringAsFixed(1)}"),
-                                ),
-                              );
-
-                              setState(() {
-                                _lastTapImagePoint = imagePoint;
-                                _bbox = null;
-                              });
-                            }
-                          : null,
-                      onPanStart: _mode == InteractionMode.draw
-                          ? (details) {
-                              final scenePoint =
-                                  _globalToScene(details.globalPosition);
-                              if (scenePoint == null) return;
-                              setState(() {
-                                _addStrokePoint(scenePoint, drawW, drawH);
-                              });
-                            }
-                          : null,
-                      onPanUpdate: _mode == InteractionMode.draw
-                          ? (details) {
-                              final scenePoint =
-                                  _globalToScene(details.globalPosition);
-                              if (scenePoint == null) return;
-                              setState(() {
-                                _addStrokePoint(scenePoint, drawW, drawH);
-                              });
-                            }
-                          : null,
-                      onPanEnd: _mode == InteractionMode.draw
-                          ? (_) {
-                              setState(() => _points.add(Offset.infinite));
-                            }
-                          : null,
-                      child: CustomPaint(
-                        painter: MaskPainter(_points),
-                        size: Size(drawW, drawH),
-                      ),
-                    ),
-                  ),
-                  if (_bbox != null)
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: BBoxPainter(_bbox!),
-                      ),
-                    ),
-                  if (_lastTapImagePoint != null)
-                    Positioned.fill(
-                      child: CustomPaint(
-                        painter: SquarePointPainter(
-                          point: _lastTapImagePoint!,
-                          imageSize: Size(
-                              _imageWidth!.toDouble(), _imageHeight!.toDouble()),
-                          size: 16.0,
-                          color: Colors.blueAccent,
+              child: ValueListenableBuilder<Matrix4>(
+                valueListenable: _transformationController,
+                builder: (context, value, _) {
+                  final brushSceneWidth = _currentBrushSceneWidth(drawW);
+                  return Stack(
+                    children: [
+                      Positioned.fill(
+                        child: Image(
+                          key: _imageKey,
+                          image: _previewMaskBytes != null
+                              ? MemoryImage(_previewMaskBytes!)
+                              : FileImage(_imageFile!) as ImageProvider,
+                          fit: BoxFit.contain,
                         ),
                       ),
-                    )
-                ],
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTapDown: _mode == InteractionMode.point
+                              ? (details) {
+                                  if (_imageWidth == null ||
+                                      _imageHeight == null) return;
+                                  final scenePoint =
+                                      _globalToScene(details.globalPosition);
+                                  final size = _canvasSize;
+                                  if (scenePoint == null || size == null) return;
+                                  final px = (scenePoint.dx *
+                                          (_imageWidth! / size.width))
+                                      .clamp(0.0, _imageWidth!.toDouble());
+                                  final py = (scenePoint.dy *
+                                          (_imageHeight! / size.height))
+                                      .clamp(0.0, _imageHeight!.toDouble());
+                                  final imagePoint = Offset(px, py);
+
+                                  AppLogger.log(
+                                      'Tap on image (scene=$scenePoint → image=$imagePoint) drawSize=($drawW,$drawH)');
+
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          "Clicked on image at point: ${imagePoint.dx.toStringAsFixed(1)}, ${imagePoint.dy.toStringAsFixed(1)}"),
+                                    ),
+                                  );
+
+                                  setState(() {
+                                    _lastTapImagePoint = imagePoint;
+                                    _bbox = null;
+                                  });
+                                }
+                              : null,
+                          onPanStart: _mode == InteractionMode.draw
+                              ? (details) {
+                                  final scenePoint =
+                                      _globalToScene(details.globalPosition);
+                                  if (scenePoint == null) return;
+                                  setState(() {
+                                    _addStrokePoint(
+                                      scenePoint,
+                                      drawW,
+                                      drawH,
+                                      brushSceneWidth,
+                                    );
+                                  });
+                                }
+                              : null,
+                          onPanUpdate: _mode == InteractionMode.draw
+                              ? (details) {
+                                  final scenePoint =
+                                      _globalToScene(details.globalPosition);
+                                  if (scenePoint == null) return;
+                                  setState(() {
+                                    _addStrokePoint(
+                                      scenePoint,
+                                      drawW,
+                                      drawH,
+                                      brushSceneWidth,
+                                    );
+                                  });
+                                }
+                              : null,
+                          onPanEnd: _mode == InteractionMode.draw
+                              ? (_) {
+                                  setState(() => _points.add(Offset.infinite));
+                                }
+                              : null,
+                          child: CustomPaint(
+                            painter: MaskPainter(
+                              _points,
+                              strokeWidth: brushSceneWidth,
+                            ),
+                            size: Size(drawW, drawH),
+                          ),
+                        ),
+                      ),
+                      if (_bbox != null)
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: BBoxPainter(_bbox!),
+                          ),
+                        ),
+                      if (_lastTapImagePoint != null)
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: SquarePointPainter(
+                              point: _lastTapImagePoint!,
+                              imageSize: Size(_imageWidth!.toDouble(),
+                                  _imageHeight!.toDouble()),
+                              size: 16.0,
+                              color: Colors.blueAccent,
+                            ),
+                          ),
+                        )
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -641,6 +716,15 @@ class _InpaintingPageState extends State<InpaintingPage> {
           heroTag: 'segment',
           child: const Icon(Icons.crop_square),
         ),
+        if (_mode == InteractionMode.draw && _hasManualDrawing)
+          const SizedBox(width: 12),
+        if (_mode == InteractionMode.draw && _hasManualDrawing)
+          FloatingActionButton(
+            onPressed: _clearManualMask,
+            heroTag: 'clear',
+            tooltip: 'Clear drawing',
+            child: const Icon(Icons.clear),
+          ),
       ],
     );
   }

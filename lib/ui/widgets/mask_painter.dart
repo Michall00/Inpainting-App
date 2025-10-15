@@ -4,14 +4,15 @@ import 'package:flutter/material.dart';
 
 class MaskPainter extends CustomPainter {
   final List<Offset> points;
-  MaskPainter(this.points);
+  final double strokeWidth;
+  MaskPainter(this.points, {required this.strokeWidth});
 
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
       ..color = Colors.red.withAlpha(128)
       ..strokeCap = StrokeCap.round
-      ..strokeWidth = 20;
+      ..strokeWidth = strokeWidth;
 
     for (int i = 0; i < points.length - 1; i++) {
       if (points[i] != Offset.infinite && points[i + 1] != Offset.infinite) {
@@ -21,7 +22,9 @@ class MaskPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(MaskPainter oldDelegate) => true;
+  bool shouldRepaint(MaskPainter oldDelegate) =>
+      oldDelegate.points != points ||
+      oldDelegate.strokeWidth != strokeWidth;
 }
 
 class BBoxPainter extends CustomPainter {
