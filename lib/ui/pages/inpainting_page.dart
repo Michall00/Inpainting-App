@@ -7,10 +7,9 @@ import '../widgets/mask_painter.dart';
 import '../../services/image_service.dart';
 import '../../services/inpainting_service.dart';
 import '../../services/segmentation_service.dart';
+import '../../utils/app_logger.dart';
 import '../../utils/image_utils.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 
 class InpaintingPage extends StatefulWidget {
@@ -123,111 +122,146 @@ class _InpaintingPageState extends State<InpaintingPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Starting segmentation from point...")),
     );
-    final encoderData = await rootBundle.load('assets/encoder.onnx');
-    final decoderData = await rootBundle.load('assets/decoder.onnx');
+    AppLogger.log('Segmentation from point requested: $point');
 
-    final segmentationStart = DateTime.now();
-    FirebaseAnalytics.instance.logEvent(
-      name: 'segmentation_started',
-      parameters: {
-        'x': point.dx,
-        'y': point.dy,
-      },
-    );
+    try {
+      final encoderData = await rootBundle.load('assets/encoder.onnx');
+      final decoderData = await rootBundle.load('assets/decoder.onnx');
 
-    final mask = await SegmentationService.segmentFromPoint(
-      imageFile: _imageFile!,
-      clickPoint: point,
-      encoderData: encoderData,
-      decoderData: decoderData,
-    );
+      final segmentationStart = DateTime.now();
+      FirebaseAnalytics.instance.logEvent(
+        name: 'segmentation_started',
+        parameters: {
+          'x': point.dx,
+          'y': point.dy,
+        },
+      );
 
-    final segmentationEnd = DateTime.now();
-    final durationMs =
-        segmentationEnd.difference(segmentationStart).inMilliseconds;
+      final mask = await SegmentationService.segmentFromPoint(
+        imageFile: _imageFile!,
+        clickPoint: point,
+        encoderData: encoderData,
+        decoderData: decoderData,
+      );
 
-    FirebaseAnalytics.instance.logEvent(
-      name: 'segmentation_completed',
-      parameters: {
-        'segmentation_duration_ms': durationMs,
-      },
-    );
+      final segmentationEnd = DateTime.now();
+      final durationMs =
+          segmentationEnd.difference(segmentationStart).inMilliseconds;
 
-    final imageBytes = await _imageFile!.readAsBytes();
-    final baseImage = img.decodeImage(imageBytes)!;
-    final decodedMask = img.decodeImage(mask)!;
+      FirebaseAnalytics.instance.logEvent(
+        name: 'segmentation_completed',
+        parameters: {
+          'segmentation_duration_ms': durationMs,
+        },
+      );
+      AppLogger.log(
+        'Segmentation from point completed in ${durationMs}ms',
+      );
 
-    final overlay = img.Image.from(baseImage);
-    for (int y = 0; y < overlay.height; y++) {
-      for (int x = 0; x < overlay.width; x++) {
-        final v = decodedMask.getPixel(x, y).r;
-        if (v == 0) {
-          overlay.setPixelRgba(x, y, 255, 0, 0, 100);
+      final imageBytes = await _imageFile!.readAsBytes();
+      final baseImage = img.decodeImage(imageBytes)!;
+      final decodedMask = img.decodeImage(mask)!;
+
+      final overlay = img.Image.from(baseImage);
+      for (int y = 0; y < overlay.height; y++) {
+        for (int x = 0; x < overlay.width; x++) {
+          final v = decodedMask.getPixel(x, y).r;
+          if (v == 0) {
+            overlay.setPixelRgba(x, y, 255, 0, 0, 100);
+          }
         }
       }
-    }
 
-    setState(() {
-      _segmentationMask = mask;
-      _maskImage = decodedMask;
-      _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
-      _lastTapImagePoint = null;
-    });
+      if (!mounted) return;
+      setState(() {
+        _segmentationMask = mask;
+        _maskImage = decodedMask;
+        _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
+        _lastTapImagePoint = null;
+      });
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Segmentation from point failed',
+        error,
+        stackTrace,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Segmentation failed: $error')),
+      );
+    }
   }
 
   Future<void> _runSegmentationFromBbox(Rect bbox) async {
     if (_imageFile == null) return;
-    final encoderData = await rootBundle.load('assets/encoder.onnx');
-    final decoderData = await rootBundle.load('assets/decoder.onnx');
+    AppLogger.log('Segmentation from bbox requested: $bbox');
+    try {
+      final encoderData = await rootBundle.load('assets/encoder.onnx');
+      final decoderData = await rootBundle.load('assets/decoder.onnx');
 
-    final segmentationStart = DateTime.now();
-    FirebaseAnalytics.instance.logEvent(
-      name: 'segmentation_started',
-      parameters: {
-        'x1': bbox.left,
-        'y1': bbox.top,
-        'x2': bbox.right,
-        'y2': bbox.bottom,
-      },
-    );
+      final segmentationStart = DateTime.now();
+      FirebaseAnalytics.instance.logEvent(
+        name: 'segmentation_started',
+        parameters: {
+          'x1': bbox.left,
+          'y1': bbox.top,
+          'x2': bbox.right,
+          'y2': bbox.bottom,
+        },
+      );
 
-    final mask = await SegmentationService.segmentFromBbox(
-      imageFile: _imageFile!,
-      bboxPx: bbox,
-      encoderData: encoderData,
-      decoderData: decoderData,
-    );
+      final mask = await SegmentationService.segmentFromBbox(
+        imageFile: _imageFile!,
+        bboxPx: bbox,
+        encoderData: encoderData,
+        decoderData: decoderData,
+      );
 
-    final segmentationEnd = DateTime.now();
-    final durationMs =
-        segmentationEnd.difference(segmentationStart).inMilliseconds;
+      final segmentationEnd = DateTime.now();
+      final durationMs =
+          segmentationEnd.difference(segmentationStart).inMilliseconds;
 
-    FirebaseAnalytics.instance.logEvent(
-      name: 'segmentation_completed',
-      parameters: {
-        'segmentation_duration_ms': durationMs,
-      },
-    );
+      FirebaseAnalytics.instance.logEvent(
+        name: 'segmentation_completed',
+        parameters: {
+          'segmentation_duration_ms': durationMs,
+        },
+      );
+      AppLogger.log(
+        'Segmentation from bbox completed in ${durationMs}ms',
+      );
 
-    final imageBytes = await _imageFile!.readAsBytes();
-    final baseImage = img.decodeImage(imageBytes)!;
-    final decodedMask = img.decodeImage(mask)!;
+      final imageBytes = await _imageFile!.readAsBytes();
+      final baseImage = img.decodeImage(imageBytes)!;
+      final decodedMask = img.decodeImage(mask)!;
 
-    final overlay = img.Image.from(baseImage);
-    for (int y = 0; y < overlay.height; y++) {
-      for (int x = 0; x < overlay.width; x++) {
-        final v = decodedMask.getPixel(x, y).r;
-        if (v == 0) {
-          overlay.setPixelRgba(x, y, 255, 0, 0, 100);
+      final overlay = img.Image.from(baseImage);
+      for (int y = 0; y < overlay.height; y++) {
+        for (int x = 0; x < overlay.width; x++) {
+          final v = decodedMask.getPixel(x, y).r;
+          if (v == 0) {
+            overlay.setPixelRgba(x, y, 255, 0, 0, 100);
+          }
         }
       }
-    }
 
-    setState(() {
-      _segmentationMask = mask;
-      _maskImage = decodedMask;
-      _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
-    });
+      if (!mounted) return;
+      setState(() {
+        _segmentationMask = mask;
+        _maskImage = decodedMask;
+        _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
+      });
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Segmentation from bbox failed',
+        error,
+        stackTrace,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Segmentation failed: $error')),
+      );
+    }
   }
 
   Future<void> _onSegmentPressed() async {
@@ -237,6 +271,10 @@ class _InpaintingPageState extends State<InpaintingPage> {
       );
       return;
     }
+
+    AppLogger.log(
+      'Segment button pressed. mode=$_mode, lastPoint=$_lastTapImagePoint, bbox=$_bbox',
+    );
 
     if (_mode == InteractionMode.segment) {
       if (_lastTapImagePoint == null) {
@@ -380,19 +418,34 @@ class _InpaintingPageState extends State<InpaintingPage> {
             GestureDetector(
               onTapDown: (details) {
                 if (_mode == InteractionMode.segment) {
-                  final box =
-                      _imageKey.currentContext!.findRenderObject() as RenderBox;
-                  final local = box.globalToLocal(details.globalPosition);
-                  final boxSize = box.size;
-                  final scaleX = _imageWidth! / boxSize.width;
-                  final scaleY = _imageHeight! / boxSize.height;
-                  final imagePoint =
-                      Offset(local.dx * scaleX, local.dy * scaleY);
+                  final renderBox = _imageKey.currentContext?.findRenderObject()
+                      as RenderBox?;
+                  if (renderBox == null ||
+                      _imageWidth == null ||
+                      _imageHeight == null) {
+                    return;
+                  }
+
+                  final local = renderBox.globalToLocal(details.globalPosition);
+                  final clampedLocal = Offset(
+                    local.dx.clamp(0.0, renderBox.size.width),
+                    local.dy.clamp(0.0, renderBox.size.height),
+                  );
+                  final scaleX = _imageWidth! / renderBox.size.width;
+                  final scaleY = _imageHeight! / renderBox.size.height;
+                  final imagePoint = Offset(
+                    clampedLocal.dx * scaleX,
+                    clampedLocal.dy * scaleY,
+                  );
+
+                  AppLogger.log(
+                    'Segment tap captured. display=$clampedLocal image=$imagePoint',
+                  );
 
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
-                        content:
-                            Text("Clicked on image at point: $imagePoint")),
+                        content: Text(
+                            "Clicked on image at point: ${imagePoint.dx.toStringAsFixed(1)}, ${imagePoint.dy.toStringAsFixed(1)}")),
                   );
 
                   setState(() {
@@ -423,8 +476,13 @@ class _InpaintingPageState extends State<InpaintingPage> {
             if (_bbox != null) CustomPaint(painter: BBoxPainter(_bbox!)),
             if (_lastTapImagePoint != null && _mode == InteractionMode.segment)
               CustomPaint(
-                painter:
-                    SquarePointPainter(point: _lastTapImagePoint!, size: 12.0),
+                painter: SquarePointPainter(
+                    point: _lastTapImagePoint!,
+                    imageSize: Size(
+                      _imageWidth!.toDouble(),
+                      _imageHeight!.toDouble(),
+                    ),
+                    size: 12.0),
               ),
           ],
         ),

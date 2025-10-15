@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 class MaskPainter extends CustomPainter {
@@ -43,25 +45,42 @@ class BBoxPainter extends CustomPainter {
 
 class SquarePointPainter extends CustomPainter {
   final Offset point;
+  final Size imageSize;
   final double size;
   final Color color;
 
   const SquarePointPainter({
     required this.point,
+    required this.imageSize,
     this.size = 10.0,
     this.color = Colors.amber,
   });
 
   @override
   void paint(Canvas canvas, Size canvasSize) {
-    if (!point.isFinite) return;
+    if (!point.isFinite ||
+        imageSize.width == 0 ||
+        imageSize.height == 0 ||
+        canvasSize.width == 0 ||
+        canvasSize.height == 0) {
+      return;
+    }
 
-    final rect = Rect.fromCenter(center: point, width: size, height: size);
+    final scaleX = canvasSize.width / imageSize.width;
+    final scaleY = canvasSize.height / imageSize.height;
+    final scaledPoint = Offset(point.dx * scaleX, point.dy * scaleY);
+    final scale = (scaleX + scaleY) / 2;
+    final visualSize = math.max(4.0, size * scale);
+    final rect = Rect.fromCenter(
+      center: scaledPoint,
+      width: visualSize,
+      height: visualSize,
+    );
     final paintFill = Paint()
       ..color = color.withValues(alpha: 0.9)
       ..style = PaintingStyle.fill;
     final paintBorder = Paint()
-      ..color = Colors.black.withValues(alpha: 0.7)
+      ..color = const Color.fromARGB(255, 255, 0, 0).withValues(alpha: 0.7)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.0;
 
@@ -73,5 +92,6 @@ class SquarePointPainter extends CustomPainter {
   bool shouldRepaint(SquarePointPainter oldDelegate) =>
       oldDelegate.point != point ||
       oldDelegate.size != size ||
-      oldDelegate.color != color;
+      oldDelegate.color != color ||
+      oldDelegate.imageSize != imageSize;
 }
