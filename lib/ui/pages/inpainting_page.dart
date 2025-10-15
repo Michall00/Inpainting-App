@@ -431,28 +431,35 @@ class _InpaintingPageState extends State<InpaintingPage> {
             GestureDetector(
               onTapDown: (details) {
                 if (_mode == InteractionMode.segment) {
-                  final renderBox = _imageKey.currentContext?.findRenderObject()
+                  final imageBox = _imageKey.currentContext?.findRenderObject()
                       as RenderBox?;
-                  if (renderBox == null ||
+                  if (imageBox == null ||
                       _imageWidth == null ||
                       _imageHeight == null) {
                     return;
                   }
 
-                  final local = renderBox.globalToLocal(details.globalPosition);
-                  final clampedLocal = Offset(
-                    local.dx.clamp(0.0, renderBox.size.width),
-                    local.dy.clamp(0.0, renderBox.size.height),
+                  final localToImage =
+                      imageBox.globalToLocal(details.globalPosition);
+                  final paintBounds = imageBox.paintBounds;
+                  if (paintBounds.isEmpty) {
+                    return;
+                  }
+                  final relativeToImage = Offset(
+                    (localToImage.dx - paintBounds.left)
+                        .clamp(0.0, paintBounds.width),
+                    (localToImage.dy - paintBounds.top)
+                        .clamp(0.0, paintBounds.height),
                   );
-                  final scaleX = _imageWidth! / renderBox.size.width;
-                  final scaleY = _imageHeight! / renderBox.size.height;
+                  final scaleX = _imageWidth! / paintBounds.width;
+                  final scaleY = _imageHeight! / paintBounds.height;
                   final imagePoint = Offset(
-                    clampedLocal.dx * scaleX,
-                    clampedLocal.dy * scaleY,
+                    relativeToImage.dx * scaleX,
+                    relativeToImage.dy * scaleY,
                   );
 
                   AppLogger.log(
-                    'Segment tap captured. display=$clampedLocal image=$imagePoint',
+                    'Segment tap captured. renderLocal=$localToImage relative=$relativeToImage image=$imagePoint',
                   );
 
                   ScaffoldMessenger.of(context).showSnackBar(
