@@ -381,132 +381,129 @@ class _InpaintingPageState extends State<InpaintingPage> {
   }
 
   Widget _buildImageStack() {
-    final width = _imageWidth?.toDouble() ?? 256;
-    final height = _imageHeight?.toDouble() ?? 256;
+    if (_imageFile == null && _previewMaskBytes == null) {
+      return const Center(child: Text("No image selected"));
+    }
 
-    return Center(
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _previewMaskBytes != null
-                ? Image.memory(
-                    _previewMaskBytes!,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxW = constraints.maxWidth;
+        final maxH = constraints.maxHeight;
+
+        final imgW = _imageWidth?.toDouble() ?? 256;
+        final imgH = _imageHeight?.toDouble() ?? 256;
+
+        final scale = (maxW / imgW < maxH / imgH) ? maxW / imgW : maxH / imgH;
+        final drawW = imgW * scale;
+        final drawH = imgH * scale;
+
+        return Center(
+          child: SizedBox(
+            width: drawW,
+            height: drawH,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Image(
                     key: _imageKey,
-                    fit: BoxFit.contain,
-                  )
-                : Image.file(
-                    _imageFile!,
-                    key: _imageKey,
+                    image: _previewMaskBytes != null
+                        ? MemoryImage(_previewMaskBytes!)
+                        : FileImage(_imageFile!) as ImageProvider,
                     fit: BoxFit.contain,
                   ),
-            GestureDetector(
-              onTapDown: (details) {
-                if (_mode == InteractionMode.segment) {
-                  final imageBox = _imageKey.currentContext?.findRenderObject()
-                      as RenderBox?;
-                  if (imageBox == null ||
-                      _imageWidth == null ||
-                      _imageHeight == null) {
-                    return;
-                  }
+                ),
+                GestureDetector(
+                  behavior: HitTestBehavior.deferToChild,
+                  onTapDown: (details) {
+                    if (_mode != InteractionMode.segment) return;
 
-                  final localToImage =
-                      imageBox.globalToLocal(details.globalPosition);
-                  final paintBounds = imageBox.paintBounds;
-                  if (paintBounds.isEmpty) {
-                    return;
-                  }
-                  final relativeToImage = Offset(
-                    (localToImage.dx - paintBounds.left)
-                        .clamp(0.0, paintBounds.width),
-                    (localToImage.dy - paintBounds.top)
-                        .clamp(0.0, paintBounds.height),
-                  );
-                  final scaleX = _imageWidth! / paintBounds.width;
-                  final scaleY = _imageHeight! / paintBounds.height;
-                  final imagePoint = Offset(
-                    relativeToImage.dx * scaleX,
-                    relativeToImage.dy * scaleY,
-                  );
+                    final box = _imageKey.currentContext?.findRenderObject()
+                        as RenderBox?;
+                    if (box == null ||
+                        _imageWidth == null ||
+                        _imageHeight == null) return;
 
-                  AppLogger.log(
-                    'Segment tap captured. renderLocal=$localToImage relative=$relativeToImage image=$imagePoint',
-                  );
+                    final local = details.localPosition;
 
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
+                    final px = (local.dx * (_imageWidth! / drawW))
+                        .clamp(0.0, _imageWidth!.toDouble());
+                    final py = (local.dy * (_imageHeight! / drawH))
+                        .clamp(0.0, _imageHeight!.toDouble());
+                    final imagePoint = Offset(px, py);
+
+                    AppLogger.log(
+                        'Tap on image (local=$local → image=$imagePoint) drawSize=($drawW,$drawH)');
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
                         content: Text(
-                            "Clicked on image at point: ${imagePoint.dx.toStringAsFixed(1)}, ${imagePoint.dy.toStringAsFixed(1)}")),
-                  );
+                            "Clicked on image at point: ${imagePoint.dx.toStringAsFixed(1)}, ${imagePoint.dy.toStringAsFixed(1)}"),
+                      ),
+                    );
 
-                  setState(() {
-                    _lastTapImagePoint = imagePoint;
-                    _bbox = null;
-                    _pendingSegmentationPoint = null;
-                    _pendingSegmentationBBox = null;
-                  });
-                }
-              },
-              onPanUpdate: (details) {
-                if (_mode == InteractionMode.draw) {
-                  final local = details.localPosition;
-                  final x = local.dx.toInt().clamp(0, _maskImage!.width - 1);
-                  final y = local.dy.toInt().clamp(0, _maskImage!.height - 1);
-                  _maskImage!.setPixelRgba(x, y, 0, 0, 0, 255);
-                  setState(() => _points.add(local));
-                }
-              },
-              onPanEnd: (_) {
-                if (_mode == InteractionMode.draw) {
-                  _points.add(Offset.infinite);
-                }
-              },
-              child: CustomPaint(
-                painter: MaskPainter(_points),
-                size: Size(width, height),
-              ),
+                    setState(() {
+                      _lastTapImagePoint = imagePoint;
+                      _bbox = null;
+                      _pendingSegmentationPoint = null;
+                      _pendingSegmentationBBox = null;
+                    });
+                  },
+                  onPanUpdate: (details) {
+                    if (_mode == InteractionMode.draw && _maskImage != null) {
+                      final local = details.localPosition;
+                      final x = (local.dx * (_maskImage!.width / drawW))
+                          .toInt()
+                          .clamp(0, _maskImage!.width - 1);
+                      final y = (local.dy * (_maskImage!.height / drawH))
+                          .toInt()
+                          .clamp(0, _maskImage!.height - 1);
+                      _maskImage!.setPixelRgba(x, y, 0, 0, 0, 255);
+                      setState(() => _points.add(local));
+                    }
+                  },
+                  onPanEnd: (_) {
+                    if (_mode == InteractionMode.draw) {
+                      _points.add(Offset.infinite);
+                    }
+                  },
+                  child: CustomPaint(
+                    painter: MaskPainter(_points),
+                    size: Size(drawW, drawH),
+                  ),
+                ),
+                if (_bbox != null) CustomPaint(painter: BBoxPainter(_bbox!)),
+                if (_pendingSegmentationBBox != null)
+                  CustomPaint(
+                    painter: BBoxPainter(
+                      _pendingSegmentationBBox!,
+                      color: Colors.blueAccent,
+                    ),
+                  ),
+                if (_pendingSegmentationPoint != null)
+                  CustomPaint(
+                    painter: SquarePointPainter(
+                      point: _pendingSegmentationPoint!,
+                      imageSize: Size(
+                          _imageWidth!.toDouble(), _imageHeight!.toDouble()),
+                      size: 16.0,
+                      color: Colors.blueAccent,
+                    ),
+                  )
+                else if (_lastTapImagePoint != null &&
+                    _mode == InteractionMode.segment)
+                  CustomPaint(
+                    painter: SquarePointPainter(
+                      point: _lastTapImagePoint!,
+                      imageSize: Size(
+                          _imageWidth!.toDouble(), _imageHeight!.toDouble()),
+                      size: 12.0,
+                    ),
+                  ),
+              ],
             ),
-            if (_bbox != null)
-              CustomPaint(
-                painter: BBoxPainter(_bbox!),
-              ),
-            if (_pendingSegmentationBBox != null)
-              CustomPaint(
-                painter: BBoxPainter(
-                  _pendingSegmentationBBox!,
-                  color: Colors.blueAccent,
-                ),
-              ),
-            if (_pendingSegmentationPoint != null)
-              CustomPaint(
-                painter: SquarePointPainter(
-                  point: _pendingSegmentationPoint!,
-                  imageSize: Size(
-                    _imageWidth!.toDouble(),
-                    _imageHeight!.toDouble(),
-                  ),
-                  size: 16.0,
-                  color: Colors.blueAccent,
-                ),
-              )
-            else if (_lastTapImagePoint != null &&
-                _mode == InteractionMode.segment)
-              CustomPaint(
-                painter: SquarePointPainter(
-                  point: _lastTapImagePoint!,
-                  imageSize: Size(
-                    _imageWidth!.toDouble(),
-                    _imageHeight!.toDouble(),
-                  ),
-                  size: 12.0,
-                ),
-              ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
