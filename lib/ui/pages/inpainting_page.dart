@@ -7,10 +7,9 @@ import '../widgets/mask_painter.dart';
 import '../../services/image_service.dart';
 import '../../services/inpainting_service.dart';
 import '../../services/segmentation_service.dart';
+import '../../utils/app_logger.dart';
 import '../../utils/image_utils.dart';
-import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
-import 'package:permission_handler/permission_handler.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 
 class InpaintingPage extends StatefulWidget {
@@ -26,13 +25,14 @@ class _InpaintingPageState extends State<InpaintingPage> {
   int? _imageWidth;
   int? _imageHeight;
   Uint8List? _previewMaskBytes;
-  final List<Offset> _points = [];
-  Rect? _bbox;
   Uint8List? _segmentationMask;
-  final GlobalKey _imageKey = GlobalKey();
   Uint8List? _outputBytes;
-  InteractionMode _mode = InteractionMode.segment;
+  final List<Offset> _points = [];
+  final GlobalKey _imageKey = GlobalKey();
+  InteractionMode _mode = InteractionMode.point;
   Offset? _lastTapImagePoint;
+  Rect? _bbox;
+  Size? _canvasSize;
 
   Future<void> _pickImage() async {
     final picker = ImagePicker();
@@ -58,16 +58,16 @@ class _InpaintingPageState extends State<InpaintingPage> {
       );
       if (result['isSuccess'] == true) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Zapisano obraz do galerii')),
+          const SnackBar(content: Text('Image saved to gallery')),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nie udało się zapisać obrazu')),
+          const SnackBar(content: Text('Error saving image to gallery')),
         );
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Błąd zapisu: $e')),
+        SnackBar(content: Text('Error saving image: $e')),
       );
     }
   }
@@ -101,138 +101,200 @@ class _InpaintingPageState extends State<InpaintingPage> {
       _imageWidth = resized.width;
       _imageHeight = resized.height;
 
-      _lastTapImagePoint = null;
       _outputBytes = null;
       _previewMaskBytes = null;
       _segmentationMask = null;
-      _points.clear();
-      _bbox = null;
       _maskImage = blank;
-      _mode = InteractionMode.segment;
+      _points.clear();
+      _lastTapImagePoint = null;
+      _bbox = null;
+      _canvasSize = null;
+      _mode = InteractionMode.point;
     });
   }
 
   Future<void> _runSegmentationFromClick(Offset point) async {
-    if (_imageFile == null) return;
-    final encoderData = await rootBundle.load('assets/encoder.onnx');
-    final decoderData = await rootBundle.load('assets/decoder.onnx');
-
-    final segmentationStart = DateTime.now();
-    FirebaseAnalytics.instance.logEvent(
-      name: 'segmentation_started',
-      parameters: {
-        'x': point.dx,
-        'y': point.dy,
-      },
-    );
-
-    final mask = await SegmentationService.segmentFromPoint(
-      imageFile: _imageFile!,
-      clickPoint: point,
-      encoderData: encoderData,
-      decoderData: decoderData,
-    );
-
-    final segmentationEnd = DateTime.now();
-    final durationMs =
-        segmentationEnd.difference(segmentationStart).inMilliseconds;
-
-    FirebaseAnalytics.instance.logEvent(
-      name: 'segmentation_completed',
-      parameters: {
-        'segmentation_duration_ms': durationMs,
-      },
-    );
-
-    final imageBytes = await _imageFile!.readAsBytes();
-    final baseImage = img.decodeImage(imageBytes)!;
-    final decodedMask = img.decodeImage(mask)!;
-
-    final overlay = img.Image.from(baseImage);
-    for (int y = 0; y < overlay.height; y++) {
-      for (int x = 0; x < overlay.width; x++) {
-        final v = decodedMask.getPixel(x, y).r;
-        if (v == 0) {
-          overlay.setPixelRgba(x, y, 255, 0, 0, 100);
-        }
-      }
+    if (_imageFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text(".")),
+      );
+      return;
     }
 
-    setState(() {
-      _segmentationMask = mask;
-      _maskImage = decodedMask;
-      _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
-    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Starting segmentation from point...")),
+    );
+    AppLogger.log('Segmentation from point requested: $point');
+
+    try {
+      final encoderData = await rootBundle.load('assets/encoder.onnx');
+      final decoderData = await rootBundle.load('assets/decoder.onnx');
+
+      final segmentationStart = DateTime.now();
+      FirebaseAnalytics.instance.logEvent(
+        name: 'segmentation_started',
+        parameters: {
+          'x': point.dx,
+          'y': point.dy,
+        },
+      );
+
+      final mask = await SegmentationService.segmentFromPoint(
+        imageFile: _imageFile!,
+        clickPoint: point,
+        encoderData: encoderData,
+        decoderData: decoderData,
+      );
+
+      final segmentationEnd = DateTime.now();
+      final durationMs =
+          segmentationEnd.difference(segmentationStart).inMilliseconds;
+
+      FirebaseAnalytics.instance.logEvent(
+        name: 'segmentation_completed',
+        parameters: {
+          'segmentation_duration_ms': durationMs,
+          'model': 'mobileSAM'
+        },
+      );
+      AppLogger.log(
+        'Segmentation from point completed in ${durationMs}ms',
+      );
+
+      final imageBytes = await _imageFile!.readAsBytes();
+      final baseImage = img.decodeImage(imageBytes)!;
+      final decodedMask = img.decodeImage(mask)!;
+
+      final overlay = img.Image.from(baseImage);
+      for (int y = 0; y < overlay.height; y++) {
+        for (int x = 0; x < overlay.width; x++) {
+          final v = decodedMask.getPixel(x, y).r;
+          if (v == 0) {
+            overlay.setPixelRgba(x, y, 255, 0, 0, 100);
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _segmentationMask = mask;
+        _maskImage = decodedMask;
+        _points.clear();
+        _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
+      });
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Segmentation from point failed',
+        error,
+        stackTrace,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Segmentation failed: $error')),
+      );
+    }
   }
 
   Future<void> _runSegmentationFromBbox(Rect bbox) async {
     if (_imageFile == null) return;
-    final encoderData = await rootBundle.load('assets/encoder.onnx');
-    final decoderData = await rootBundle.load('assets/decoder.onnx');
+    AppLogger.log('Segmentation from bbox requested: $bbox');
+    try {
+      final encoderData = await rootBundle.load('assets/encoder.onnx');
+      final decoderData = await rootBundle.load('assets/decoder.onnx');
 
-    final segmentationStart = DateTime.now();
-    FirebaseAnalytics.instance.logEvent(
-      name: 'segmentation_started',
-      parameters: {
-        'x1': bbox.left,
-        'y1': bbox.top,
-        'x2': bbox.right,
-        'y2': bbox.bottom,
-      },
-    );
+      final segmentationStart = DateTime.now();
+      FirebaseAnalytics.instance.logEvent(
+        name: 'segmentation_started',
+        parameters: {
+          'x1': bbox.left,
+          'y1': bbox.top,
+          'x2': bbox.right,
+          'y2': bbox.bottom,
+        },
+      );
 
-    final mask = await SegmentationService.segmentFromBbox(
-      imageFile: _imageFile!,
-      bboxPx: bbox,
-      encoderData: encoderData,
-      decoderData: decoderData,
-    );
+      final mask = await SegmentationService.segmentFromBbox(
+        imageFile: _imageFile!,
+        bboxPx: bbox,
+        encoderData: encoderData,
+        decoderData: decoderData,
+      );
 
-    final segmentationEnd = DateTime.now();
-    final durationMs =
-        segmentationEnd.difference(segmentationStart).inMilliseconds;
+      final segmentationEnd = DateTime.now();
+      final durationMs =
+          segmentationEnd.difference(segmentationStart).inMilliseconds;
 
-    FirebaseAnalytics.instance.logEvent(
-      name: 'segmentation_completed',
-      parameters: {
-        'segmentation_duration_ms': durationMs,
-      },
-    );
+      FirebaseAnalytics.instance.logEvent(
+        name: 'segmentation_completed',
+        parameters: {
+          'segmentation_duration_ms': durationMs,
+          'model': 'mobileSAM'
+        },
+      );
+      AppLogger.log(
+        'Segmentation from bbox completed in ${durationMs}ms',
+      );
 
-    final imageBytes = await _imageFile!.readAsBytes();
-    final baseImage = img.decodeImage(imageBytes)!;
-    final decodedMask = img.decodeImage(mask)!;
+      final imageBytes = await _imageFile!.readAsBytes();
+      final baseImage = img.decodeImage(imageBytes)!;
+      final decodedMask = img.decodeImage(mask)!;
 
-    final overlay = img.Image.from(baseImage);
-    for (int y = 0; y < overlay.height; y++) {
-      for (int x = 0; x < overlay.width; x++) {
-        final v = decodedMask.getPixel(x, y).r;
-        if (v == 0) {
-          overlay.setPixelRgba(x, y, 255, 0, 0, 100);
+      final overlay = img.Image.from(baseImage);
+      for (int y = 0; y < overlay.height; y++) {
+        for (int x = 0; x < overlay.width; x++) {
+          final v = decodedMask.getPixel(x, y).r;
+          if (v == 0) {
+            overlay.setPixelRgba(x, y, 255, 0, 0, 100);
+          }
         }
       }
-    }
 
-    setState(() {
-      _segmentationMask = mask;
-      _maskImage = decodedMask;
-      _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
-    });
+      if (!mounted) return;
+      setState(() {
+        _segmentationMask = mask;
+        _maskImage = decodedMask;
+        _points.clear();
+        _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
+      });
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Segmentation from bbox failed',
+        error,
+        stackTrace,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Segmentation failed: $error')),
+      );
+    }
   }
 
   Future<void> _onSegmentPressed() async {
-    if (_imageFile == null) return;
+    if (_imageFile == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("No image selected.")),
+      );
+      return;
+    }
 
-    if (_mode == InteractionMode.segment) {
+    AppLogger.log(
+      'Segment button pressed. mode=$_mode, lastPoint=$_lastTapImagePoint, bbox=$_bbox',
+    );
+
+    if (_mode == InteractionMode.point) {
       if (_lastTapImagePoint == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-              content:
-                  Text('Kliknij na obiekt, aby wskazać punkt segmentacji')),
+              content: Text(
+                  "Click on the object in the image to start segmentation")),
         );
         return;
       }
-      await _runSegmentationFromClick(_lastTapImagePoint!);
+      final point = _lastTapImagePoint!;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Segmentation point: $point")),
+      );
+      await _runSegmentationFromClick(point);
       return;
     }
 
@@ -240,20 +302,63 @@ class _InpaintingPageState extends State<InpaintingPage> {
     if (box == null) {
       if (_points.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Najpierw narysuj maskę')),
+          const SnackBar(content: Text("First draw the mask")),
         );
         return;
       }
       box = bboxFromPoints(_points);
       if (box.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Nie udało się wyznaczyć bboxa')),
+          const SnackBar(content: Text("Failed to determine bbox")),
         );
         return;
       }
     }
 
-    await _runSegmentationFromBbox(box);
+    final canvasSize = _canvasSize;
+    if (canvasSize == null ||
+        canvasSize.width == 0 ||
+        canvasSize.height == 0 ||
+        _imageWidth == null ||
+        _imageHeight == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Canvas size unavailable for bbox.")),
+      );
+      return;
+    }
+
+    if (box.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Failed to determine bbox")),
+      );
+      return;
+    }
+
+    final scaleX = _imageWidth! / canvasSize.width;
+    final scaleY = _imageHeight! / canvasSize.height;
+    final imageRect = Rect.fromLTRB(
+      ((box.left.clamp(0.0, canvasSize.width)) * scaleX)
+          .clamp(0.0, _imageWidth!.toDouble())
+          .toDouble(),
+      ((box.top.clamp(0.0, canvasSize.height)) * scaleY)
+          .clamp(0.0, _imageHeight!.toDouble())
+          .toDouble(),
+      ((box.right.clamp(0.0, canvasSize.width)) * scaleX)
+          .clamp(0.0, _imageWidth!.toDouble())
+          .toDouble(),
+      ((box.bottom.clamp(0.0, canvasSize.height)) * scaleY)
+          .clamp(0.0, _imageHeight!.toDouble())
+          .toDouble(),
+    );
+
+    setState(() {
+      _bbox = box;
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Segmentation from bbox: $box")),
+    );
+    await _runSegmentationFromBbox(imageRect);
   }
 
   Future<void> _runInpainting() async {
@@ -295,106 +400,135 @@ class _InpaintingPageState extends State<InpaintingPage> {
       name: 'inpainting_completed',
       parameters: {
         'inpainting_duration_ms': durationMs,
+        'model': 'migan',
       },
     );
 
     _startNewEditingSession(resized: decoded, tempFile: newTemp);
   }
 
-  void _onShowBBoxFromMask() {
-    if (_points.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Najpierw narysuj maskę')),
-      );
-      return;
-    }
-
-    final box = bboxFromPoints(_points);
-    if (box.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nie udało się wyznaczyć bboxa')),
-      );
-      return;
-    }
-
-    final renderBox =
-        _imageKey.currentContext?.findRenderObject() as RenderBox?;
-    final overlaySize = renderBox?.size;
-    final clamped = (overlaySize == null)
-        ? box
-        : Rect.fromLTRB(
-            box.left.clamp(0.0, overlaySize.width),
-            box.top.clamp(0.0, overlaySize.height),
-            box.right.clamp(0.0, overlaySize.width),
-            box.bottom.clamp(0.0, overlaySize.height),
-          );
-
-    setState(() {
-      _bbox = clamped;
-    });
-  }
-
   Widget _buildImageStack() {
-    final width = _imageWidth?.toDouble() ?? 256;
-    final height = _imageHeight?.toDouble() ?? 256;
+    if (_imageFile == null && _previewMaskBytes == null) {
+      return const Center(child: Text("No image selected"));
+    }
 
-    return Center(
-      child: SizedBox(
-        width: width,
-        height: height,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            _previewMaskBytes != null
-                ? Image.memory(
-                    _previewMaskBytes!,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxW = constraints.maxWidth;
+        final maxH = constraints.maxHeight;
+
+        final imgW = _imageWidth?.toDouble() ?? 256;
+        final imgH = _imageHeight?.toDouble() ?? 256;
+
+        final scale = (maxW / imgW < maxH / imgH) ? maxW / imgW : maxH / imgH;
+        final drawW = imgW * scale;
+        final drawH = imgH * scale;
+        _canvasSize = Size(drawW, drawH);
+
+        return Center(
+          child: SizedBox(
+            width: drawW,
+            height: drawH,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Image(
                     key: _imageKey,
-                    fit: BoxFit.contain,
-                  )
-                : Image.file(
-                    _imageFile!,
-                    key: _imageKey,
+                    image: _previewMaskBytes != null
+                        ? MemoryImage(_previewMaskBytes!)
+                        : FileImage(_imageFile!) as ImageProvider,
                     fit: BoxFit.contain,
                   ),
-            GestureDetector(
-              onTapDown: (details) {
-                if (_mode == InteractionMode.segment) {
-                  final box =
-                      _imageKey.currentContext!.findRenderObject() as RenderBox;
-                  final local = box.globalToLocal(details.globalPosition);
-                  final boxSize = box.size;
-                  final scaleX = _imageWidth! / boxSize.width;
-                  final scaleY = _imageHeight! / boxSize.height;
-                  final imagePoint =
-                      Offset(local.dx * scaleX, local.dy * scaleY);
+                ),
+                GestureDetector(
+                  behavior: HitTestBehavior.deferToChild,
+                  onTapDown: (details) {
+                    if (_mode != InteractionMode.point) return;
 
-                  _lastTapImagePoint = imagePoint;
-                  _runSegmentationFromClick(imagePoint);
-                }
-              },
-              onPanUpdate: (details) {
-                if (_mode == InteractionMode.draw) {
-                  final local = details.localPosition;
-                  final x = local.dx.toInt().clamp(0, _maskImage!.width - 1);
-                  final y = local.dy.toInt().clamp(0, _maskImage!.height - 1);
-                  _maskImage!.setPixelRgba(x, y, 0, 0, 0, 255);
-                  setState(() => _points.add(local));
-                }
-              },
-              onPanEnd: (_) {
-                if (_mode == InteractionMode.draw) {
-                  _points.add(Offset.infinite);
-                }
-              },
-              child: CustomPaint(
-                painter: MaskPainter(_points),
-                size: Size(width, height),
-              ),
+                    final box = _imageKey.currentContext?.findRenderObject()
+                        as RenderBox?;
+                    if (box == null ||
+                        _imageWidth == null ||
+                        _imageHeight == null) return;
+
+                    final local = details.localPosition;
+
+                    final px = (local.dx * (_imageWidth! / drawW))
+                        .clamp(0.0, _imageWidth!.toDouble());
+                    final py = (local.dy * (_imageHeight! / drawH))
+                        .clamp(0.0, _imageHeight!.toDouble());
+                    final imagePoint = Offset(px, py);
+
+                    AppLogger.log(
+                        'Tap on image (local=$local → image=$imagePoint) drawSize=($drawW,$drawH)');
+
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                            "Clicked on image at point: ${imagePoint.dx.toStringAsFixed(1)}, ${imagePoint.dy.toStringAsFixed(1)}"),
+                      ),
+                    );
+
+                    setState(() {
+                      _lastTapImagePoint = imagePoint;
+                      _bbox = null;
+                    });
+                  },
+                  onPanUpdate: (details) {
+                    if (_mode == InteractionMode.draw && _maskImage != null) {
+                      final local = details.localPosition;
+                      final clamped = Offset(
+                        local.dx.clamp(0.0, drawW).toDouble(),
+                        local.dy.clamp(0.0, drawH).toDouble(),
+                      );
+                      final x = (clamped.dx * (_maskImage!.width / drawW))
+                          .toInt()
+                          .clamp(0, _maskImage!.width - 1);
+                      final y = (clamped.dy * (_maskImage!.height / drawH))
+                          .toInt()
+                          .clamp(0, _maskImage!.height - 1);
+                      _maskImage!.setPixelRgba(x, y, 0, 0, 0, 255);
+                      setState(() {
+                        _points.add(clamped);
+                        final newBox = bboxFromPoints(_points);
+                        _bbox = newBox.isEmpty ? null : newBox;
+                      });
+                    }
+                  },
+                  onPanEnd: (_) {
+                    if (_mode == InteractionMode.draw) {
+                      setState(() => _points.add(Offset.infinite));
+                    }
+                  },
+                  child: CustomPaint(
+                    painter:
+                        _segmentationMask == null ? MaskPainter(_points) : null,
+                    size: Size(drawW, drawH),
+                  ),
+                ),
+                if (_bbox != null)
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: BBoxPainter(_bbox!),
+                    ),
+                  ),
+                if (_lastTapImagePoint != null)
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: SquarePointPainter(
+                        point: _lastTapImagePoint!,
+                        imageSize: Size(
+                            _imageWidth!.toDouble(), _imageHeight!.toDouble()),
+                        size: 16.0,
+                        color: Colors.blueAccent,
+                      ),
+                    ),
+                  )
+              ],
             ),
-            if (_bbox != null) CustomPaint(painter: BBoxPainter(_bbox!)),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -412,7 +546,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         FloatingActionButton(
           onPressed: _pickImageFromCamera,
           heroTag: 'camera',
-          tooltip: 'Zrób zdjęcie',
+          tooltip: 'Take a photo',
           child: const Icon(Icons.camera_alt),
         ),
         const SizedBox(width: 12),
@@ -430,7 +564,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
                   await _saveImageToGallery(bytes);
                 },
           heroTag: 'save',
-          tooltip: 'Zapisz do galerii',
+          tooltip: 'Save to gallery',
           child: const Icon(Icons.save_alt),
         ),
         const SizedBox(width: 12),
@@ -438,8 +572,11 @@ class _InpaintingPageState extends State<InpaintingPage> {
           onPressed: () {
             setState(() {
               _mode = _mode == InteractionMode.draw
-                  ? InteractionMode.segment
+                  ? InteractionMode.point
                   : InteractionMode.draw;
+              if (_mode == InteractionMode.draw) {
+                _lastTapImagePoint = null;
+              }
             });
           },
           heroTag: 'mode',
@@ -447,15 +584,10 @@ class _InpaintingPageState extends State<InpaintingPage> {
               _mode == InteractionMode.draw ? Icons.brush : Icons.touch_app),
         ),
         const SizedBox(width: 12),
-        FloatingActionButton.extended(
+        FloatingActionButton(
           onPressed: _onSegmentPressed,
           heroTag: 'segment',
-          label: Text(_mode == InteractionMode.draw
-              ? 'Segmentuj (bbox)'
-              : 'Segmentuj (punkt)'),
-          icon: Icon(_mode == InteractionMode.draw
-              ? Icons.crop_square
-              : Icons.touch_app),
+          child: const Icon(Icons.crop_square),
         ),
       ],
     );
@@ -478,7 +610,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
             );
           }
           if (_imageFile == null) {
-            return const Center(child: Text("Brak zdjęcia"));
+            return const Center(child: Text("No image selected"));
           }
           return _buildImageStack();
         },
@@ -489,4 +621,4 @@ class _InpaintingPageState extends State<InpaintingPage> {
   }
 }
 
-enum InteractionMode { draw, segment }
+enum InteractionMode { draw, point }
