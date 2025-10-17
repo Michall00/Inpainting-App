@@ -1,10 +1,10 @@
 import 'dart:io';
 import 'dart:typed_data';
-import 'dart:ui' show Offset, Rect;
 
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:onnxruntime/onnxruntime.dart';
+import '../utils/tensor_utils.dart';
 
 class SegmentationService {
   static bool _envInitialized = false;
@@ -36,10 +36,11 @@ class SegmentationService {
       OrtSessionOptions(),
     );
 
-    final encoderInput = OrtValueTensor.createTensorWithDataList(
-      imgFloat,
-      [image.height, image.width, 3],
-    );
+    // final encoderInput = OrtValueTensor.createTensorWithDataList(
+    //   imgFloat,
+    //   [image.height, image.width, 3],
+    // );
+    final encoderInput = convertImageToUint8NCHW(image);
 
     final embeddings = encoderSession.run(
       OrtRunOptions(),
@@ -147,10 +148,11 @@ class SegmentationService {
       OrtSessionOptions(),
     );
 
-    final encoderInput = OrtValueTensor.createTensorWithDataList(
-      imgFloat,
-      [image.height, image.width, 3],
-    );
+    // final encoderInput = OrtValueTensor.createTensorWithDataList(
+    //   imgFloat,
+    //   [image.height, image.width, 3],
+    // );
+    final encoderInput = convertImageToUint8NCHW(image);
 
     final embeddings = encoderSession.run(
       OrtRunOptions(),

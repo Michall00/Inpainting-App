@@ -41,8 +41,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
 
   static const double _baseBrushSceneWidth = 20.0;
 
-  bool get _hasManualDrawing =>
-      _points.any((offset) => offset.isFinite);
+  bool get _hasManualDrawing => _points.any((offset) => offset.isFinite);
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
@@ -101,8 +100,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
     required img.Image resized,
     required File tempFile,
   }) {
-    final blank =
-        _createBlankMaskImage(resized.width, resized.height);
+    final blank = _createBlankMaskImage(resized.width, resized.height);
 
     _transformationController.value = Matrix4.identity();
     setState(() {
@@ -205,8 +203,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
   }
 
   img.Image _createBlankMaskImage(int width, int height) {
-    final blank =
-        img.Image(width: width, height: height, numChannels: 1);
+    final blank = img.Image(width: width, height: height, numChannels: 1);
     blank.getBytes().fillRange(0, width * height, 255);
     return blank;
   }
@@ -228,7 +225,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
     if (_imageFile == null) return;
     AppLogger.log('Segmentation from bbox requested: $bbox');
     try {
-      final encoderData = await rootBundle.load('assets/encoder.onnx');
+      final encoderData =
+          await rootBundle.load('assets/encoder_shadows.onnx.onnx');
       final decoderData = await rootBundle.load('assets/decoder.onnx');
 
       final segmentationStart = DateTime.now();
@@ -340,12 +338,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
     final centerY =
         (clamped.dy * heightScale).round().clamp(0, _maskImage!.height - 1);
 
-    final brushRadiusScene =
-        math.max(1.0, brushSceneWidth / 2.0);
-    final radiusX =
-        math.max(1, (brushRadiusScene * widthScale).round());
-    final radiusY =
-        math.max(1, (brushRadiusScene * heightScale).round());
+    final brushRadiusScene = math.max(1.0, brushSceneWidth / 2.0);
+    final radiusX = math.max(1, (brushRadiusScene * widthScale).round());
+    final radiusY = math.max(1, (brushRadiusScene * heightScale).round());
 
     for (int dy = -radiusY; dy <= radiusY; dy++) {
       for (int dx = -radiusX; dx <= radiusX; dx++) {
@@ -555,7 +550,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
                                   final scenePoint =
                                       _globalToScene(details.globalPosition);
                                   final size = _canvasSize;
-                                  if (scenePoint == null || size == null) return;
+                                  if (scenePoint == null || size == null)
+                                    return;
                                   final px = (scenePoint.dx *
                                           (_imageWidth! / size.width))
                                       .clamp(0.0, _imageWidth!.toDouble());
