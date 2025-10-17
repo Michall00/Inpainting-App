@@ -1,4 +1,3 @@
-import 'dart:nativewrappers/_internal/vm/lib/ffi_native_type_patch.dart';
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:onnxruntime/onnxruntime.dart';
@@ -22,12 +21,12 @@ OrtValueTensor convertImageToUint8NCHW(img.Image image) {
 OrtValueTensor convertImageToFloatNCHW(img.Image image) {
   final w = image.width, h = image.height;
   final pixels = image.getBytes(order: img.ChannelOrder.rgb);
-  final floats = <Float>[];
+  final floats = Float32List(3 * h * w);
   for (int c = 0; c < 3; c++) {
     for (int y = 0; y < h; y++) {
       for (int x = 0; x < w; x++) {
         final i = (y * w + x) * 3 + c;
-        floats.add(pixels[i] / 255.0 as Float);
+        floats[i] = pixels[i] / 255.0;
       }
     }
   }
