@@ -134,7 +134,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
     AppLogger.log('Segmentation from point requested: $point');
 
     try {
-      final encoderData = await rootBundle.load('assets/encoder.onnx');
+      final encoderData = await rootBundle.load('assets/encoder_shadows.onnx');
       final decoderData = await rootBundle.load('assets/decoder.onnx');
 
       final segmentationStart = DateTime.now();
@@ -225,8 +225,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
     if (_imageFile == null) return;
     AppLogger.log('Segmentation from bbox requested: $bbox');
     try {
-      final encoderData =
-          await rootBundle.load('assets/encoder_shadows.onnx.onnx');
+      final encoderData = await rootBundle.load('assets/encoder_shadows.onnx');
       final decoderData = await rootBundle.load('assets/decoder.onnx');
 
       final segmentationStart = DateTime.now();
