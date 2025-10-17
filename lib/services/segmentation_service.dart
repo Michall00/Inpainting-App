@@ -40,7 +40,7 @@ class SegmentationService {
     //   imgFloat,
     //   [image.height, image.width, 3],
     // );
-    final encoderInput = convertImageToUint8NCHW(image);
+    final encoderInput = convertImageToFloatNCHW(image);
 
     final embeddings = encoderSession.run(
       OrtRunOptions(),
@@ -152,7 +152,7 @@ class SegmentationService {
     //   imgFloat,
     //   [image.height, image.width, 3],
     // );
-    final encoderInput = convertImageToUint8NCHW(image);
+    final encoderInput = convertImageToFloatNCHW(image);
 
     final embeddings = encoderSession.run(
       OrtRunOptions(),
