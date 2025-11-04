@@ -2,6 +2,9 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:onnxruntime/onnxruntime.dart';
 
+const _pixelMean = [123.675, 116.28, 103.53];
+const _pixelStd = [58.395, 57.12, 57.375];
+
 OrtValueTensor convertImageToUint8NCHW(img.Image image) {
   final w = image.width, h = image.height;
   final pixels = image.getBytes(order: img.ChannelOrder.rgb);
@@ -23,10 +26,15 @@ OrtValueTensor convertImageToFloatNCHW(img.Image image) {
   final pixels = image.getBytes(order: img.ChannelOrder.rgb);
   final floats = Float32List(3 * h * w);
   for (int c = 0; c < 3; c++) {
+    final channelOffset = c * h * w;
+    final mean = _pixelMean[c];
+    final std = _pixelStd[c];
     for (int y = 0; y < h; y++) {
       for (int x = 0; x < w; x++) {
-        final i = (y * w + x) * 3 + c;
-        floats[i] = pixels[i] / 255.0;
+        final srcIndex = (y * w + x) * 3 + c;
+        final dstIndex = channelOffset + y * w + x;
+        final pixel = pixels[srcIndex].toDouble();
+        floats[dstIndex] = (pixel - mean) / std;
       }
     }
   }

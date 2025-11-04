@@ -24,22 +24,12 @@ class SegmentationService {
     _ensureEnvironmentInitialized();
     final imageBytes = await imageFile.readAsBytes();
     final image = img.decodeImage(imageBytes)!;
-    final pixels = image.getBytes(order: img.ChannelOrder.rgb);
-
-    final imgFloat = Float32List(pixels.length);
-    for (int i = 0; i < pixels.length; i++) {
-      imgFloat[i] = pixels[i].toDouble();
-    }
 
     final encoderSession = OrtSession.fromBuffer(
       encoderData.buffer.asUint8List(),
       OrtSessionOptions(),
     );
 
-    // final encoderInput = OrtValueTensor.createTensorWithDataList(
-    //   imgFloat,
-    //   [image.height, image.width, 3],
-    // );
     final encoderInput = convertImageToFloatNCHW(image);
 
     final embeddings = encoderSession.run(
@@ -96,7 +86,7 @@ class SegmentationService {
         final binary = <int>[];
         for (final row in rawMask[0][0] as List) {
           for (final v in row as List) {
-            binary.add((v as double) > 0 ? 0 : 255);
+            binary.add((v as double) > 0 ? 255 : 0);
           }
         }
 
@@ -136,22 +126,12 @@ class SegmentationService {
     _ensureEnvironmentInitialized();
     final imageBytes = await imageFile.readAsBytes();
     final image = img.decodeImage(imageBytes)!;
-    final pixels = image.getBytes(order: img.ChannelOrder.rgb);
-
-    final imgFloat = Float32List(pixels.length);
-    for (int i = 0; i < pixels.length; i++) {
-      imgFloat[i] = pixels[i].toDouble();
-    }
 
     final encoderSession = OrtSession.fromBuffer(
       encoderData.buffer.asUint8List(),
       OrtSessionOptions(),
     );
 
-    // final encoderInput = OrtValueTensor.createTensorWithDataList(
-    //   imgFloat,
-    //   [image.height, image.width, 3],
-    // );
     final encoderInput = convertImageToFloatNCHW(image);
 
     final embeddings = encoderSession.run(
@@ -222,7 +202,7 @@ class SegmentationService {
         final binary = <int>[];
         for (final row in rawMask[0][0] as List) {
           for (final v in row as List) {
-            binary.add((v as double) > 0 ? 0 : 255);
+            binary.add((v as double) > 0 ? 255 : 0);
           }
         }
 
