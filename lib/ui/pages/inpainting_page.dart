@@ -807,10 +807,13 @@ class _InpaintingPageState extends State<InpaintingPage> {
   }
 
   Widget _buildFloatingButtons() {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
         FloatingActionButton(
           onPressed: _pickImage,
           heroTag: 'pick',
@@ -905,6 +908,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
             child: const Icon(Icons.clear),
           ),
       ],
+      ),
     );
   }
 
