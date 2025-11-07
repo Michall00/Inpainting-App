@@ -99,10 +99,8 @@ class SegmentationService {
     final labels = <double>[];
 
     if (bboxPx != null && !bboxPx.isEmpty) {
-      final x0 =
-          bboxPx.left.clamp(0.0, image.width.toDouble()).toDouble() * sx;
-      final y0 =
-          bboxPx.top.clamp(0.0, image.height.toDouble()).toDouble() * sy;
+      final x0 = bboxPx.left.clamp(0.0, image.width.toDouble()).toDouble() * sx;
+      final y0 = bboxPx.top.clamp(0.0, image.height.toDouble()).toDouble() * sy;
       final x1 =
           bboxPx.right.clamp(0.0, image.width.toDouble()).toDouble() * sx;
       final y1 =
@@ -178,8 +176,7 @@ class SegmentationService {
         'orig_im_size': origImSize,
       };
 
-      final outputs =
-          decoderSession.run(OrtRunOptions(), decoderInputs);
+      final outputs = decoderSession.run(OrtRunOptions(), decoderInputs);
       try {
         if (outputs.isEmpty || outputs[0] == null) {
           throw StateError('Masks output was not produced by decoder.');

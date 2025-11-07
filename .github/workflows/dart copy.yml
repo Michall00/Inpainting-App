@@ -1,0 +1,182 @@
+name: iOS-ipa-build
+
+on:
+  push:
+    branches:
+      - master
+      - develop
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-ios:
+    name: 🎉 iOS Build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          architecture: x64
+          
+      - run: flutter pub get
+
+      - name: Install Firebase CLI
+        run: |
+          curl -sL https://firebase.tools | bash
+
+      - name: Generate firebase_app_id_file.json
+        run: |
+          cat > ios/firebase_app_id_file.json <<EOF
+          {
+            "app_id": "${{ secrets.FIREBASE_APP_ID }}",
+            "api_key": "${{ secrets.FIREBASE_API_KEY }}",
+            "project_id": "${{ secrets.FIREBASE_PROJECT_ID }}"
+          }
+          EOF
+
+      - name: Decode GoogleService-Info.plist
+        run: |
+          echo "${{ secrets.GOOGLE_SERVICE_INFO_PLIST_BASE64 }}" | base64 --decode > ios/Runner/GoogleService-Info.plist
+
+      - name: Generate firebase_options.dart
+        run: |
+          dart pub global activate flutterfire_cli
+          echo "$HOME/.pub-cache/bin" >> $GITHUB_PATH
+          flutterfire configure --project=${{ secrets.FIREBASE_PROJECT_ID }} --platforms=ios --out=lib/firebase_options.dart --yes
+        env:
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}  
+
+      - name: Ensure Podfile with iOS 13.0
+        run: |
+          cd ios
+          if [ ! -f Podfile ]; then
+            pod init
+          fi
+          if grep -q "^platform :ios" Podfile; then
+            sed -i '' 's/^platform :ios.*/platform :ios, '\''13.0'\''/' Podfile
+          else
+            sed -i '' '1s;^;platform :ios, '\''13.0'\''\n;' Podfile
+          fi
+          
+      - name: Install CocoaPods
+        run: |
+          cd ios
+          pod install
+          
+      - name: Show build settings (sanity check)
+        run: |
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -showBuildSettings | \
+          egrep "CODE_SIGN|DEVELOPMENT_TEAM|PRODUCT_BUNDLE_IDENTIFIER"
+
+      - name: Force no-codesign in xcconfig (Runner)
+        run: |
+          for cfg in Debug Release Profile; do
+            xc="ios/Flutter/${cfg}.xcconfig"
+            {
+              echo "";
+              echo "CODE_SIGNING_ALLOWED=NO";
+              echo "CODE_SIGNING_REQUIRED=NO";
+              echo "CODE_SIGN_STYLE=Manual";
+              echo "DEVELOPMENT_TEAM=";
+              echo "PROVISIONING_PROFILE_SPECIFIER=";
+              echo "CODE_SIGN_IDENTITY=";
+              echo "CODE_SIGN_ENTITLEMENTS=";
+              echo "CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO";
+            } >> "$xc"
+          done
+
+        
+      - name: Show build settings after no-codesign (sanity check)
+        run: |
+          xcodebuild -workspace ios/Runner.xcworkspace -scheme Runner -configuration Release -showBuildSettings | \
+          egrep "CODE_SIGN|DEVELOPMENT_TEAM|PRODUCT_BUNDLE_IDENTIFIER"
+      
+      # - name: Build iOS app
+      #   run: flutter build ios --release --no-codesign --build-name=1.1.0 --build-number=${{ github.run_number }}
+
+      - name: Flutter generate Xcode project
+        run: flutter build ios --release --no-codesign --config-only
+
+      - name: Resolve SPM
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner
+
+      - name: Build with xcodebuild (no signing, verbose)
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -workspace ios/Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build/ios/DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_STYLE=Manual \
+            CODE_SIGN_IDENTITY= \
+            DEVELOPMENT_TEAM= \
+            PROVISIONING_PROFILE_SPECIFIER= \
+            CODE_SIGN_ENTITLEMENTS= \
+            CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
+            OTHER_CODE_SIGN_FLAGS= \
+            SWIFT_COMPILATION_MODE=wholemodule \
+            ONLY_ACTIVE_ARCH=NO \
+            build | tee xcodebuild.log
+
+          echo "———— Errors ————"
+          (grep -n -E "error:|fatal error:" -n xcodebuild.log || true)
+
+      - name: Upload Xcode log (artifact)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcodebuild-log
+          path: xcodebuild.log
+
+
+      - name: Check UUIDs
+        run: |
+          APP_UUID=$(dwarfdump --uuid build/ios/iphoneos/Runner.app/Runner | grep '(arm64)' | grep -o 'UUID: [0-9A-F-]*' | cut -d' ' -f2)
+          DSYM_UUID=$(dwarfdump --uuid build/ios/Release-iphoneos/Runner.app.dSYM | grep '(arm64)' | grep -o 'UUID: [0-9A-F-]*' | cut -d' ' -f2)
+          if [ "$APP_UUID" = "$DSYM_UUID" ]; then
+            echo "UUIDs match: $APP_UUID"
+          else
+            echo "UUIDs do not match: APP_UUID=$APP_UUID, DSYM_UUID=$DSYM_UUID"
+            exit 1
+          fi
+
+      - name: Upload dSYM to Crashlytics
+        run: |
+          dsymPath="build/ios/Release-iphoneos/Runner.app.dSYM"
+          if [[ ! -d ${dsymPath} ]]; then
+            echo "No debug symbols were found, skip publishing to Firebase Crashlytics"
+          else
+            echo "Publishing debug symbols from $dsymPath to Firebase Crashlytics"
+            ./ios/Pods/FirebaseCrashlytics/upload-symbols -gsp ios/Runner/GoogleService-Info.plist -p ios $dsymPath
+          fi
+
+      - run: mkdir Payload
+        working-directory: build/ios/iphoneos
+
+      - run: mv Runner.app/ Payload
+        working-directory: build/ios/iphoneos
+
+      - name: Zip output
+        run: zip -qq -r -9 FlutterIpaExport.ipa Payload
+        working-directory: build/ios/iphoneos
+
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/ios/iphoneos/FlutterIpaExport.ipa
+          tag: v1.0.${{ github.run_number }}
+          overwrite: true
+          body: "This is first release"

@@ -369,6 +369,13 @@ class _InpaintingPageState extends State<InpaintingPage> {
     AppLogger.log(
         'Refining segmentation with ${isPositive ? 'positive' : 'negative'} point: $point');
 
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+            'Refining segmentation with ${isPositive ? 'positive' : 'negative'} point: $point'),
+      ),
+    );
+
     final previousPositive = List<Offset>.from(_positivePoints);
     final previousNegative = List<Offset>.from(_negativePoints);
     final updatedPositive = List<Offset>.from(_positivePoints);
@@ -412,7 +419,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Added ${isPositive ? 'positive' : 'negative'} point at ' 
+            'Added ${isPositive ? 'positive' : 'negative'} point at '
             '(${point.dx.toStringAsFixed(1)}, ${point.dy.toStringAsFixed(1)})',
           ),
         ),
@@ -462,6 +469,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       );
     }
   }
+
   Offset? _globalToScene(Offset globalPosition) {
     final renderBox =
         _interactiveViewerKey.currentContext?.findRenderObject() as RenderBox?;
@@ -732,16 +740,16 @@ class _InpaintingPageState extends State<InpaintingPage> {
                                   AppLogger.log(
                                       'Tap on image (scene=$scenePoint → image=$imagePoint) drawSize=($drawW,$drawH)');
 
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                          "Clicked on image at point: ${imagePoint.dx.toStringAsFixed(1)}, ${imagePoint.dy.toStringAsFixed(1)}"),
+                                    ),
+                                  );
+
                                   if (_segmentationMask != null) {
                                     _refineSegmentation(imagePoint);
                                   } else {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                            "Clicked on image at point: ${imagePoint.dx.toStringAsFixed(1)}, ${imagePoint.dy.toStringAsFixed(1)}"),
-                                      ),
-                                    );
-
                                     setState(() {
                                       _lastTapImagePoint = imagePoint;
                                       _bbox = null;
@@ -852,100 +860,100 @@ class _InpaintingPageState extends State<InpaintingPage> {
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-        FloatingActionButton(
-          onPressed: _pickImage,
-          heroTag: 'pick',
-          child: const Icon(Icons.photo_library),
-        ),
-        const SizedBox(width: 12),
-        FloatingActionButton(
-          onPressed: _pickImageFromCamera,
-          heroTag: 'camera',
-          tooltip: 'Take a photo',
-          child: const Icon(Icons.camera_alt),
-        ),
-        const SizedBox(width: 12),
-        FloatingActionButton(
-          onPressed: _runInpainting,
-          heroTag: 'inpaint',
-          child: const Icon(Icons.auto_fix_high),
-        ),
-        const SizedBox(width: 12),
-        FloatingActionButton(
-          onPressed: _imageFile == null
-              ? null
-              : () async {
-                  final bytes = await _imageFile!.readAsBytes();
-                  await _saveImageToGallery(bytes);
-                },
-          heroTag: 'save',
-          tooltip: 'Save to gallery',
-          child: const Icon(Icons.save_alt),
-        ),
-        const SizedBox(width: 12),
-        FloatingActionButton(
-          onPressed: () {
-            setState(() {
-              _mode = _mode == InteractionMode.draw
-                  ? InteractionMode.point
-                  : InteractionMode.draw;
-              if (_mode == InteractionMode.draw) {
-                _lastTapImagePoint = null;
-              }
-            });
-          },
-          heroTag: 'mode',
-          child: Icon(
-              _mode == InteractionMode.draw ? Icons.brush : Icons.touch_app),
-        ),
-        const SizedBox(width: 12),
-        FloatingActionButton(
-          onPressed: _isSegmentationInProgress ? null : _onSegmentPressed,
-          heroTag: 'segment',
-          child: const Icon(Icons.crop_square),
-        ),
-        if (_mode == InteractionMode.point && _segmentationMask != null) ...[
-          const SizedBox(width: 12),
-          FloatingActionButton.small(
-            onPressed: _isSegmentationInProgress
-                ? null
-                : () {
-                    setState(
-                      () => _pointMode = SegmentationPointMode.positive,
-                    );
-                  },
-            heroTag: 'positiveHint',
-            backgroundColor: _pointMode == SegmentationPointMode.positive
-                ? Colors.green
-                : null,
-            child: const Icon(Icons.add_circle),
-          ),
-          const SizedBox(width: 12),
-          FloatingActionButton.small(
-            onPressed: _isSegmentationInProgress
-                ? null
-                : () {
-                    setState(
-                      () => _pointMode = SegmentationPointMode.negative,
-                    );
-                  },
-            heroTag: 'negativeHint',
-            backgroundColor: _pointMode == SegmentationPointMode.negative
-                ? Colors.red
-                : null,
-            child: const Icon(Icons.remove_circle),
-          ),
-        ],
-        if (_mode == InteractionMode.draw && _hasManualDrawing)
-          const SizedBox(width: 12),
-        if (_mode == InteractionMode.draw && _hasManualDrawing)
           FloatingActionButton(
-            onPressed: _clearManualMask,
-            heroTag: 'clear',
-            tooltip: 'Clear drawing',
-            child: const Icon(Icons.clear),
+            onPressed: _pickImage,
+            heroTag: 'pick',
+            child: const Icon(Icons.photo_library),
           ),
-      ],
+          const SizedBox(width: 12),
+          FloatingActionButton(
+            onPressed: _pickImageFromCamera,
+            heroTag: 'camera',
+            tooltip: 'Take a photo',
+            child: const Icon(Icons.camera_alt),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton(
+            onPressed: _runInpainting,
+            heroTag: 'inpaint',
+            child: const Icon(Icons.auto_fix_high),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton(
+            onPressed: _imageFile == null
+                ? null
+                : () async {
+                    final bytes = await _imageFile!.readAsBytes();
+                    await _saveImageToGallery(bytes);
+                  },
+            heroTag: 'save',
+            tooltip: 'Save to gallery',
+            child: const Icon(Icons.save_alt),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton(
+            onPressed: () {
+              setState(() {
+                _mode = _mode == InteractionMode.draw
+                    ? InteractionMode.point
+                    : InteractionMode.draw;
+                if (_mode == InteractionMode.draw) {
+                  _lastTapImagePoint = null;
+                }
+              });
+            },
+            heroTag: 'mode',
+            child: Icon(
+                _mode == InteractionMode.draw ? Icons.brush : Icons.touch_app),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton(
+            onPressed: _isSegmentationInProgress ? null : _onSegmentPressed,
+            heroTag: 'segment',
+            child: const Icon(Icons.crop_square),
+          ),
+          if (_mode == InteractionMode.point && _segmentationMask != null) ...[
+            const SizedBox(width: 12),
+            FloatingActionButton.small(
+              onPressed: _isSegmentationInProgress
+                  ? null
+                  : () {
+                      setState(
+                        () => _pointMode = SegmentationPointMode.positive,
+                      );
+                    },
+              heroTag: 'positiveHint',
+              backgroundColor: _pointMode == SegmentationPointMode.positive
+                  ? Colors.green
+                  : null,
+              child: const Icon(Icons.add_circle),
+            ),
+            const SizedBox(width: 12),
+            FloatingActionButton.small(
+              onPressed: _isSegmentationInProgress
+                  ? null
+                  : () {
+                      setState(
+                        () => _pointMode = SegmentationPointMode.negative,
+                      );
+                    },
+              heroTag: 'negativeHint',
+              backgroundColor: _pointMode == SegmentationPointMode.negative
+                  ? Colors.red
+                  : null,
+              child: const Icon(Icons.remove_circle),
+            ),
+          ],
+          if (_mode == InteractionMode.draw && _hasManualDrawing)
+            const SizedBox(width: 12),
+          if (_mode == InteractionMode.draw && _hasManualDrawing)
+            FloatingActionButton(
+              onPressed: _clearManualMask,
+              heroTag: 'clear',
+              tooltip: 'Clear drawing',
+              child: const Icon(Icons.clear),
+            ),
+        ],
       ),
     );
   }
