@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
@@ -38,6 +39,12 @@ class _InpaintingPageState extends State<InpaintingPage> {
   Offset? _lastTapImagePoint;
   Rect? _bbox;
   Size? _canvasSize;
+  Float32List? _lowResMaskInput;
+  Rect? _segmentationImageRect;
+  final List<Offset> _positivePoints = [];
+  final List<Offset> _negativePoints = [];
+  SegmentationPointMode _pointMode = SegmentationPointMode.positive;
+  bool _isSegmentationInProgress = false;
 
   static const double _baseBrushSceneWidth = 20.0;
 
@@ -117,14 +124,22 @@ class _InpaintingPageState extends State<InpaintingPage> {
       _bbox = null;
       _canvasSize = null;
       _mode = InteractionMode.point;
+      _lowResMaskInput = null;
+      _segmentationImageRect = null;
+      _positivePoints.clear();
+      _negativePoints.clear();
+      _pointMode = SegmentationPointMode.positive;
+      _isSegmentationInProgress = false;
     });
   }
 
   Future<void> _runSegmentationFromClick(Offset point) async {
-    if (_imageFile == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text(".")),
-      );
+    if (_imageFile == null || _isSegmentationInProgress) {
+      if (_imageFile == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text(".")),
+        );
+      }
       return;
     }
 
@@ -133,10 +148,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
     );
     AppLogger.log('Segmentation from point requested: $point');
 
+    _isSegmentationInProgress = true;
     try {
-      final encoderData = await rootBundle.load('assets/encoder_shadows.onnx');
-      final decoderData = await rootBundle.load('assets/decoder.onnx');
-
       final segmentationStart = DateTime.now();
       FirebaseAnalytics.instance.logEvent(
         name: 'segmentation_started',
@@ -146,11 +159,14 @@ class _InpaintingPageState extends State<InpaintingPage> {
         },
       );
 
-      final mask = await SegmentationService.segmentFromPoint(
-        imageFile: _imageFile!,
-        clickPoint: point,
-        encoderData: encoderData,
-        decoderData: decoderData,
+      final newPositive = [point];
+      final newNegative = <Offset>[];
+
+      final result = await _callSegmentation(
+        bbox: null,
+        positivePoints: newPositive,
+        negativePoints: newNegative,
+        lowResMask: null,
       );
 
       final segmentationEnd = DateTime.now();
@@ -168,26 +184,18 @@ class _InpaintingPageState extends State<InpaintingPage> {
         'Segmentation from point completed in ${durationMs}ms',
       );
 
-      final imageBytes = await _imageFile!.readAsBytes();
-      final baseImage = img.decodeImage(imageBytes)!;
-      final decodedMask = img.decodeImage(mask)!;
-
-      final overlay = img.Image.from(baseImage);
-      for (int y = 0; y < overlay.height; y++) {
-        for (int x = 0; x < overlay.width; x++) {
-          final v = decodedMask.getPixel(x, y).r;
-          if (v == 0) {
-            overlay.setPixelRgba(x, y, 255, 0, 0, 100);
-          }
-        }
-      }
-
+      await _applySegmentationResult(result);
       if (!mounted) return;
       setState(() {
-        _segmentationMask = mask;
-        _maskImage = decodedMask;
+        _positivePoints
+          ..clear()
+          ..addAll(newPositive);
+        _negativePoints.clear();
+        _segmentationImageRect = null;
         _points.clear();
-        _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
+        _lastTapImagePoint = null;
+        _bbox = null;
+        _pointMode = SegmentationPointMode.positive;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -199,6 +207,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Segmentation failed: $error')),
       );
+    } finally {
+      _isSegmentationInProgress = false;
     }
   }
 
@@ -222,12 +232,11 @@ class _InpaintingPageState extends State<InpaintingPage> {
   }
 
   Future<void> _runSegmentationFromBbox(Rect bbox) async {
-    if (_imageFile == null) return;
+    if (_imageFile == null || _isSegmentationInProgress) return;
     AppLogger.log('Segmentation from bbox requested: $bbox');
-    try {
-      final encoderData = await rootBundle.load('assets/encoder_shadows.onnx');
-      final decoderData = await rootBundle.load('assets/decoder.onnx');
 
+    _isSegmentationInProgress = true;
+    try {
       final segmentationStart = DateTime.now();
       FirebaseAnalytics.instance.logEvent(
         name: 'segmentation_started',
@@ -239,11 +248,11 @@ class _InpaintingPageState extends State<InpaintingPage> {
         },
       );
 
-      final mask = await SegmentationService.segmentFromBbox(
-        imageFile: _imageFile!,
-        bboxPx: bbox,
-        encoderData: encoderData,
-        decoderData: decoderData,
+      final result = await _callSegmentation(
+        bbox: bbox,
+        positivePoints: const [],
+        negativePoints: const [],
+        lowResMask: null,
       );
 
       final segmentationEnd = DateTime.now();
@@ -261,26 +270,15 @@ class _InpaintingPageState extends State<InpaintingPage> {
         'Segmentation from bbox completed in ${durationMs}ms',
       );
 
-      final imageBytes = await _imageFile!.readAsBytes();
-      final baseImage = img.decodeImage(imageBytes)!;
-      final decodedMask = img.decodeImage(mask)!;
-
-      final overlay = img.Image.from(baseImage);
-      for (int y = 0; y < overlay.height; y++) {
-        for (int x = 0; x < overlay.width; x++) {
-          final v = decodedMask.getPixel(x, y).r;
-          if (v == 0) {
-            overlay.setPixelRgba(x, y, 255, 0, 0, 100);
-          }
-        }
-      }
-
+      await _applySegmentationResult(result);
       if (!mounted) return;
       setState(() {
-        _segmentationMask = mask;
-        _maskImage = decodedMask;
+        _positivePoints.clear();
+        _negativePoints.clear();
+        _segmentationImageRect = bbox;
         _points.clear();
-        _previewMaskBytes = Uint8List.fromList(img.encodePng(overlay));
+        _bbox = null;
+        _pointMode = SegmentationPointMode.positive;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -292,6 +290,137 @@ class _InpaintingPageState extends State<InpaintingPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Segmentation failed: $error')),
       );
+    } finally {
+      _isSegmentationInProgress = false;
+    }
+  }
+
+  Future<SegmentationResult> _callSegmentation({
+    required Rect? bbox,
+    required List<Offset> positivePoints,
+    required List<Offset> negativePoints,
+    required Float32List? lowResMask,
+  }) async {
+    final encoderData = await rootBundle.load('assets/encoder_shadows.onnx');
+    final decoderData = await rootBundle.load('assets/decoder.onnx');
+    return SegmentationService.segmentWithPoints(
+      imageFile: _imageFile!,
+      bboxPx: bbox,
+      positivePoints: List<Offset>.from(positivePoints),
+      negativePoints: List<Offset>.from(negativePoints),
+      lowResMaskInput: lowResMask,
+      encoderData: encoderData,
+      decoderData: decoderData,
+    );
+  }
+
+  Future<_SegmentationVisuals> _prepareSegmentationVisuals(
+      SegmentationResult result) async {
+    final imageBytes = await _imageFile!.readAsBytes();
+    final baseImage = img.decodeImage(imageBytes)!;
+    final decodedMask = img.decodeImage(result.maskBytes)!;
+    final overlay = _composeOverlay(baseImage, decodedMask);
+    return _SegmentationVisuals(
+      maskBytes: result.maskBytes,
+      maskImage: decodedMask,
+      overlayBytes: Uint8List.fromList(img.encodePng(overlay)),
+      lowResMask: result.lowResMask,
+    );
+  }
+
+  Future<void> _applySegmentationResult(SegmentationResult result) async {
+    final visuals = await _prepareSegmentationVisuals(result);
+    if (!mounted) return;
+    setState(() {
+      _segmentationMask = visuals.maskBytes;
+      _maskImage = visuals.maskImage;
+      _previewMaskBytes = visuals.overlayBytes;
+      _lowResMaskInput = visuals.lowResMask;
+    });
+  }
+
+  img.Image _composeOverlay(img.Image baseImage, img.Image mask) {
+    final overlay = img.Image.from(baseImage);
+    for (int y = 0; y < overlay.height; y++) {
+      for (int x = 0; x < overlay.width; x++) {
+        final value = mask.getPixel(x, y).r;
+        if (value == 0) {
+          overlay.setPixelRgba(x, y, 0, 255, 0, 120);
+        }
+      }
+    }
+    return overlay;
+  }
+
+  Future<void> _refineSegmentation(Offset point) async {
+    if (_imageFile == null ||
+        _segmentationMask == null ||
+        _isSegmentationInProgress) {
+      return;
+    }
+    final lowRes = _lowResMaskInput;
+    if (lowRes == null) {
+      AppLogger.log(
+          'Refinement skipped because low-res mask is unavailable for point $point');
+      return;
+    }
+
+    final isPositive = _pointMode == SegmentationPointMode.positive;
+    AppLogger.log(
+        'Refining segmentation with ${isPositive ? 'positive' : 'negative'} point: $point');
+
+    final updatedPositive = List<Offset>.from(_positivePoints);
+    final updatedNegative = List<Offset>.from(_negativePoints);
+    if (isPositive) {
+      if (!updatedPositive.contains(point)) {
+        updatedPositive.add(point);
+      }
+    } else {
+      if (!updatedNegative.contains(point)) {
+        updatedNegative.add(point);
+      }
+    }
+
+    _isSegmentationInProgress = true;
+    try {
+      final result = await _callSegmentation(
+        bbox: _segmentationImageRect,
+        positivePoints: updatedPositive,
+        negativePoints: updatedNegative,
+        lowResMask: lowRes,
+      );
+      await _applySegmentationResult(result);
+      if (!mounted) return;
+      setState(() {
+        _positivePoints
+          ..clear()
+          ..addAll(updatedPositive);
+        _negativePoints
+          ..clear()
+          ..addAll(updatedNegative);
+        _lastTapImagePoint = null;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            isPositive
+                ? 'Dodano punkt pozytywny do maski'
+                : 'Dodano punkt negatywny do maski',
+          ),
+        ),
+      );
+    } catch (error, stackTrace) {
+      AppLogger.error(
+        'Segmentation refinement failed',
+        error,
+        stackTrace,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Refinement failed: $error')),
+      );
+    } finally {
+      _isSegmentationInProgress = false;
     }
   }
 
@@ -358,6 +487,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
   }
 
   Future<void> _onSegmentPressed() async {
+    if (_isSegmentationInProgress) {
+      return;
+    }
     if (_imageFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("No image selected.")),
@@ -562,17 +694,21 @@ class _InpaintingPageState extends State<InpaintingPage> {
                                   AppLogger.log(
                                       'Tap on image (scene=$scenePoint → image=$imagePoint) drawSize=($drawW,$drawH)');
 
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                          "Clicked on image at point: ${imagePoint.dx.toStringAsFixed(1)}, ${imagePoint.dy.toStringAsFixed(1)}"),
-                                    ),
-                                  );
+                                  if (_segmentationMask != null) {
+                                    _refineSegmentation(imagePoint);
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                            "Clicked on image at point: ${imagePoint.dx.toStringAsFixed(1)}, ${imagePoint.dy.toStringAsFixed(1)}"),
+                                      ),
+                                    );
 
-                                  setState(() {
-                                    _lastTapImagePoint = imagePoint;
-                                    _bbox = null;
-                                  });
+                                    setState(() {
+                                      _lastTapImagePoint = imagePoint;
+                                      _bbox = null;
+                                    });
+                                  }
                                 }
                               : null,
                           onPanStart: _mode == InteractionMode.draw
@@ -623,6 +759,22 @@ class _InpaintingPageState extends State<InpaintingPage> {
                         Positioned.fill(
                           child: CustomPaint(
                             painter: BBoxPainter(_bbox!),
+                          ),
+                        ),
+                      if ((_positivePoints.isNotEmpty ||
+                              _negativePoints.isNotEmpty) &&
+                          _imageWidth != null &&
+                          _imageHeight != null)
+                        Positioned.fill(
+                          child: CustomPaint(
+                            painter: SegmentationHintsPainter(
+                              positives: _positivePoints,
+                              negatives: _negativePoints,
+                              imageSize: Size(
+                                _imageWidth!.toDouble(),
+                                _imageHeight!.toDouble(),
+                              ),
+                            ),
                           ),
                         ),
                       if (_lastTapImagePoint != null)
@@ -707,10 +859,42 @@ class _InpaintingPageState extends State<InpaintingPage> {
         ),
         const SizedBox(width: 12),
         FloatingActionButton(
-          onPressed: _onSegmentPressed,
+          onPressed: _isSegmentationInProgress ? null : _onSegmentPressed,
           heroTag: 'segment',
           child: const Icon(Icons.crop_square),
         ),
+        if (_mode == InteractionMode.point && _segmentationMask != null) ...[
+          const SizedBox(width: 12),
+          FloatingActionButton.small(
+            onPressed: _isSegmentationInProgress
+                ? null
+                : () {
+                    setState(
+                      () => _pointMode = SegmentationPointMode.positive,
+                    );
+                  },
+            heroTag: 'positiveHint',
+            backgroundColor: _pointMode == SegmentationPointMode.positive
+                ? Colors.green
+                : null,
+            child: const Icon(Icons.add_circle),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton.small(
+            onPressed: _isSegmentationInProgress
+                ? null
+                : () {
+                    setState(
+                      () => _pointMode = SegmentationPointMode.negative,
+                    );
+                  },
+            heroTag: 'negativeHint',
+            backgroundColor: _pointMode == SegmentationPointMode.negative
+                ? Colors.red
+                : null,
+            child: const Icon(Icons.remove_circle),
+          ),
+        ],
         if (_mode == InteractionMode.draw && _hasManualDrawing)
           const SizedBox(width: 12),
         if (_mode == InteractionMode.draw && _hasManualDrawing)
@@ -753,3 +937,19 @@ class _InpaintingPageState extends State<InpaintingPage> {
 }
 
 enum InteractionMode { draw, point }
+
+enum SegmentationPointMode { positive, negative }
+
+class _SegmentationVisuals {
+  final Uint8List maskBytes;
+  final img.Image maskImage;
+  final Uint8List overlayBytes;
+  final Float32List lowResMask;
+
+  const _SegmentationVisuals({
+    required this.maskBytes,
+    required this.maskImage,
+    required this.overlayBytes,
+    required this.lowResMask,
+  });
+}

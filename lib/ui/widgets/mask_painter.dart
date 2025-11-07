@@ -100,3 +100,75 @@ class SquarePointPainter extends CustomPainter {
       oldDelegate.color != color ||
       oldDelegate.imageSize != imageSize;
 }
+
+class SegmentationHintsPainter extends CustomPainter {
+  final List<Offset> positives;
+  final List<Offset> negatives;
+  final Size imageSize;
+
+  const SegmentationHintsPainter({
+    required this.positives,
+    required this.negatives,
+    required this.imageSize,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (imageSize.width == 0 ||
+        imageSize.height == 0 ||
+        size.width == 0 ||
+        size.height == 0) {
+      return;
+    }
+
+    final scaleX = size.width / imageSize.width;
+    final scaleY = size.height / imageSize.height;
+    final scale = (scaleX + scaleY) / 2;
+    final radius = math.max(4.0, 6.0 * scale);
+
+    final positiveFill = Paint()
+      ..color = Colors.greenAccent.withValues(alpha: 0.7)
+      ..style = PaintingStyle.fill;
+    final positiveBorder = Paint()
+      ..color = Colors.green.withValues(alpha: 0.9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+    final negativeFill = Paint()
+      ..color = Colors.redAccent.withValues(alpha: 0.7)
+      ..style = PaintingStyle.fill;
+    final negativeBorder = Paint()
+      ..color = Colors.red.withValues(alpha: 0.9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0;
+
+    for (final point in positives) {
+      if (!point.isFinite) continue;
+      final translated = Offset(point.dx * scaleX, point.dy * scaleY);
+      canvas.drawCircle(translated, radius, positiveFill);
+      canvas.drawCircle(translated, radius, positiveBorder);
+    }
+
+    for (final point in negatives) {
+      if (!point.isFinite) continue;
+      final translated = Offset(point.dx * scaleX, point.dy * scaleY);
+      canvas.drawCircle(translated, radius, negativeFill);
+      canvas.drawCircle(translated, radius, negativeBorder);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant SegmentationHintsPainter oldDelegate) {
+    return !_listEquals(oldDelegate.positives, positives) ||
+        !_listEquals(oldDelegate.negatives, negatives) ||
+        oldDelegate.imageSize != imageSize;
+  }
+
+  bool _listEquals(List<Offset> a, List<Offset> b) {
+    if (identical(a, b)) return true;
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+}
