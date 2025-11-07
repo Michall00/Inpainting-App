@@ -208,7 +208,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         SnackBar(content: Text('Segmentation failed: $error')),
       );
     } finally {
-      _isSegmentationInProgress = false;
+      if (mounted) setState(() => _isSegmentationInProgress = false);
     }
   }
 
@@ -291,7 +291,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         SnackBar(content: Text('Segmentation failed: $error')),
       );
     } finally {
-      _isSegmentationInProgress = false;
+      if (mounted) setState(() => _isSegmentationInProgress = false);
     }
   }
 
@@ -731,7 +731,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
                       ),
                       Positioned.fill(
                         child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
+                          behavior: HitTestBehavior.opaque,
                           onTapDown: _mode == InteractionMode.point
                               ? (details) {
                                   ScaffoldMessenger.of(context).showSnackBar(
@@ -826,8 +826,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
                       ),
                       if (_bbox != null)
                         Positioned.fill(
-                          child: CustomPaint(
-                            painter: BBoxPainter(_bbox!),
+                          child: IgnorePointer(
+                            ignoring: true,
+                            child: CustomPaint(painter: BBoxPainter(_bbox!)),
                           ),
                         ),
                       if ((_positivePoints.isNotEmpty ||
@@ -835,29 +836,33 @@ class _InpaintingPageState extends State<InpaintingPage> {
                           _imageWidth != null &&
                           _imageHeight != null)
                         Positioned.fill(
-                          child: CustomPaint(
-                            painter: SegmentationHintsPainter(
-                              positives: _positivePoints,
-                              negatives: _negativePoints,
-                              imageSize: Size(
-                                _imageWidth!.toDouble(),
-                                _imageHeight!.toDouble(),
+                          child: IgnorePointer(
+                            ignoring: true,
+                            child: CustomPaint(
+                              painter: SegmentationHintsPainter(
+                                positives: _positivePoints,
+                                negatives: _negativePoints,
+                                imageSize: Size(_imageWidth!.toDouble(),
+                                    _imageHeight!.toDouble()),
                               ),
                             ),
                           ),
                         ),
                       if (_lastTapImagePoint != null)
                         Positioned.fill(
-                          child: CustomPaint(
-                            painter: SquarePointPainter(
-                              point: _lastTapImagePoint!,
-                              imageSize: Size(_imageWidth!.toDouble(),
-                                  _imageHeight!.toDouble()),
-                              size: 16.0,
-                              color: Colors.blueAccent,
+                          child: IgnorePointer(
+                            ignoring: true,
+                            child: CustomPaint(
+                              painter: SquarePointPainter(
+                                point: _lastTapImagePoint!,
+                                imageSize: Size(_imageWidth!.toDouble(),
+                                    _imageHeight!.toDouble()),
+                                size: 16.0,
+                                color: Colors.blueAccent,
+                              ),
                             ),
                           ),
-                        )
+                        ),
                     ],
                   );
                 },
