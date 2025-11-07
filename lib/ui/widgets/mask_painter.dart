@@ -124,28 +124,43 @@ class SegmentationHintsPainter extends CustomPainter {
     final scaleX = size.width / imageSize.width;
     final scaleY = size.height / imageSize.height;
     final scale = (scaleX + scaleY) / 2;
-    final radius = math.max(4.0, 6.0 * scale);
+    final radius = math.max(6.0, 8.0 * scale);
+    final symbolStroke = math.max(2.0, radius * 0.35);
 
     final positiveFill = Paint()
-      ..color = Colors.greenAccent.withValues(alpha: 0.7)
+      ..color = Colors.greenAccent.withOpacity(0.9)
       ..style = PaintingStyle.fill;
     final positiveBorder = Paint()
-      ..color = Colors.green.withValues(alpha: 0.9)
+      ..color = Colors.green.shade900
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = math.max(2.0, radius * 0.2);
     final negativeFill = Paint()
-      ..color = Colors.redAccent.withValues(alpha: 0.7)
+      ..color = Colors.redAccent.withOpacity(0.9)
       ..style = PaintingStyle.fill;
     final negativeBorder = Paint()
-      ..color = Colors.red.withValues(alpha: 0.9)
+      ..color = Colors.red.shade900
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0;
+      ..strokeWidth = math.max(2.0, radius * 0.2);
+    final symbolPaint = Paint()
+      ..color = Colors.white
+      ..strokeWidth = symbolStroke
+      ..strokeCap = StrokeCap.round;
 
     for (final point in positives) {
       if (!point.isFinite) continue;
       final translated = Offset(point.dx * scaleX, point.dy * scaleY);
       canvas.drawCircle(translated, radius, positiveFill);
       canvas.drawCircle(translated, radius, positiveBorder);
+      canvas.drawLine(
+        Offset(translated.dx - radius / 2, translated.dy),
+        Offset(translated.dx + radius / 2, translated.dy),
+        symbolPaint,
+      );
+      canvas.drawLine(
+        Offset(translated.dx, translated.dy - radius / 2),
+        Offset(translated.dx, translated.dy + radius / 2),
+        symbolPaint,
+      );
     }
 
     for (final point in negatives) {
@@ -153,6 +168,11 @@ class SegmentationHintsPainter extends CustomPainter {
       final translated = Offset(point.dx * scaleX, point.dy * scaleY);
       canvas.drawCircle(translated, radius, negativeFill);
       canvas.drawCircle(translated, radius, negativeBorder);
+      canvas.drawLine(
+        Offset(translated.dx - radius / 2, translated.dy),
+        Offset(translated.dx + radius / 2, translated.dy),
+        symbolPaint,
+      );
     }
   }
 

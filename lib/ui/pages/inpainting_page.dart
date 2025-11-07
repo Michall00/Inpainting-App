@@ -369,19 +369,56 @@ class _InpaintingPageState extends State<InpaintingPage> {
     AppLogger.log(
         'Refining segmentation with ${isPositive ? 'positive' : 'negative'} point: $point');
 
+    final previousPositive = List<Offset>.from(_positivePoints);
+    final previousNegative = List<Offset>.from(_negativePoints);
     final updatedPositive = List<Offset>.from(_positivePoints);
     final updatedNegative = List<Offset>.from(_negativePoints);
+
+    bool added = false;
     if (isPositive) {
       if (!updatedPositive.contains(point)) {
         updatedPositive.add(point);
+        added = true;
       }
     } else {
       if (!updatedNegative.contains(point)) {
         updatedNegative.add(point);
+        added = true;
       }
     }
 
-    _isSegmentationInProgress = true;
+    if (!added) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'This ${isPositive ? 'positive' : 'negative'} point is already added.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    if (mounted) {
+      setState(() {
+        _isSegmentationInProgress = true;
+        _positivePoints
+          ..clear()
+          ..addAll(updatedPositive);
+        _negativePoints
+          ..clear()
+          ..addAll(updatedNegative);
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Added ${isPositive ? 'positive' : 'negative'} point at ' 
+            '(${point.dx.toStringAsFixed(1)}, ${point.dy.toStringAsFixed(1)})',
+          ),
+        ),
+      );
+    }
+
     try {
       final result = await _callSegmentation(
         bbox: _segmentationImageRect,
@@ -392,20 +429,15 @@ class _InpaintingPageState extends State<InpaintingPage> {
       await _applySegmentationResult(result);
       if (!mounted) return;
       setState(() {
-        _positivePoints
-          ..clear()
-          ..addAll(updatedPositive);
-        _negativePoints
-          ..clear()
-          ..addAll(updatedNegative);
         _lastTapImagePoint = null;
+        _isSegmentationInProgress = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
             isPositive
-                ? 'Dodano punkt pozytywny do maski'
-                : 'Dodano punkt negatywny do maski',
+                ? 'Positive point applied to mask'
+                : 'Negative point applied to mask',
           ),
         ),
       );
@@ -416,14 +448,20 @@ class _InpaintingPageState extends State<InpaintingPage> {
         stackTrace,
       );
       if (!mounted) return;
+      setState(() {
+        _positivePoints
+          ..clear()
+          ..addAll(previousPositive);
+        _negativePoints
+          ..clear()
+          ..addAll(previousNegative);
+        _isSegmentationInProgress = false;
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Refinement failed: $error')),
       );
-    } finally {
-      _isSegmentationInProgress = false;
     }
   }
-
   Offset? _globalToScene(Offset globalPosition) {
     final renderBox =
         _interactiveViewerKey.currentContext?.findRenderObject() as RenderBox?;
