@@ -734,6 +734,12 @@ class _InpaintingPageState extends State<InpaintingPage> {
                           behavior: HitTestBehavior.translucent,
                           onTapDown: _mode == InteractionMode.point
                               ? (details) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content:
+                                          Text("Clicked on image (point)."),
+                                    ),
+                                  );
                                   if (_imageWidth == null ||
                                       _imageHeight == null) return;
                                   final scenePoint =
@@ -771,6 +777,11 @@ class _InpaintingPageState extends State<InpaintingPage> {
                               : null,
                           onPanStart: _mode == InteractionMode.draw
                               ? (details) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text("Clicked on image (draw)."),
+                                    ),
+                                  );
                                   final scenePoint =
                                       _globalToScene(details.globalPosition);
                                   if (scenePoint == null) return;
