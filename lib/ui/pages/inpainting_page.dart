@@ -356,12 +356,24 @@ class _InpaintingPageState extends State<InpaintingPage> {
     if (_imageFile == null ||
         _segmentationMask == null ||
         _isSegmentationInProgress) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Refinement skipped because segmentation mask is unavailable.'),
+        ),
+      );
       return;
     }
     final lowRes = _lowResMaskInput;
     if (lowRes == null) {
       AppLogger.log(
           'Refinement skipped because low-res mask is unavailable for point $point');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'Refinement skipped because low-res mask is unavailable for point $point'),
+        ),
+      );
       return;
     }
 
