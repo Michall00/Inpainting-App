@@ -60,6 +60,7 @@ flutter:
     - assets/migan.onnx
     - assets/decoder.onnx
     - assets/encoder.onnx
+    - assets/encoder_shadows.onnx
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.
