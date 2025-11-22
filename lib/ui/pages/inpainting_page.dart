@@ -45,10 +45,41 @@ class _InpaintingPageState extends State<InpaintingPage> {
   final List<Offset> _negativePoints = [];
   SegmentationPointMode _pointMode = SegmentationPointMode.positive;
   bool _isSegmentationInProgress = false;
+  SegmentationMode _segmentationMode = SegmentationMode.onnxCpu;
 
   static const double _baseBrushSceneWidth = 20.0;
-
   bool get _hasManualDrawing => _points.any((offset) => offset.isFinite);
+
+  String get _segmentationModelName {
+    switch (_segmentationMode) {
+      case SegmentationMode.onnxCpu:
+        return 'mobileSAM_onnx_cpu';
+      case SegmentationMode.onnxCoreML:
+        return 'mobileSAM_onnx_coreml';
+      case SegmentationMode.prunedCoreML:
+        return 'mobileSAM_pruned_coreml';
+    }
+  }
+
+  double get _segmentationModelSparsity {
+    switch (_segmentationMode) {
+      case SegmentationMode.prunedCoreML:
+        return 0.9;
+      default:
+        return 0.0;
+    }
+  }
+
+  String get _segmentationEnvironmentName {
+    switch (_segmentationMode) {
+      case SegmentationMode.onnxCpu:
+        return 'CPU';
+      case SegmentationMode.onnxCoreML:
+      case SegmentationMode.prunedCoreML:
+        return 'CoreML';
+    }
+  }
+
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
@@ -177,11 +208,16 @@ class _InpaintingPageState extends State<InpaintingPage> {
         name: 'segmentation_completed',
         parameters: {
           'segmentation_duration_ms': durationMs,
-          'model': 'mobileSAM'
+          'model': _segmentationModelName,
+          'model_sparsity': _segmentationModelSparsity,
+          'environment': _segmentationEnvironmentName,
         },
       );
       AppLogger.log(
-        'Segmentation from point completed in ${durationMs}ms',
+        'Segmentation from bbox completed in ${durationMs}ms '
+        'model=$_segmentationModelName '
+        'sparsity=$_segmentationModelSparsity '
+        'env=$_segmentationEnvironmentName',
       );
 
       await _applySegmentationResult(result);
@@ -301,8 +337,17 @@ class _InpaintingPageState extends State<InpaintingPage> {
     required List<Offset> negativePoints,
     required Float32List? lowResMask,
   }) async {
-    final encoderData = await rootBundle.load('assets/encoder_shadows.onnx');
-    final decoderData = await rootBundle.load('assets/decoder.onnx');
+    final encoderAsset = _segmentationMode == SegmentationMode.prunedCoreML
+        ? 'assets/encoder_shadows_pruned.onnx'
+        : 'assets/encoder_shadows.onnx';
+
+    final decoderAsset = _segmentationMode == SegmentationMode.prunedCoreML
+        ? 'assets/decoder_pruned.onnx'
+        : 'assets/decoder.onnx';
+
+    final encoderData = await rootBundle.load(encoderAsset);
+    final decoderData = await rootBundle.load(decoderAsset);
+
     return SegmentationService.segmentWithPoints(
       imageFile: _imageFile!,
       bboxPx: bbox,
@@ -311,6 +356,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       lowResMaskInput: lowResMask,
       encoderData: encoderData,
       decoderData: decoderData,
+      mode: _segmentationMode,
     );
   }
 
@@ -939,6 +985,50 @@ class _InpaintingPageState extends State<InpaintingPage> {
             onPressed: _isSegmentationInProgress ? null : _onSegmentPressed,
             heroTag: 'segment',
             child: const Icon(Icons.crop_square),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton(
+            onPressed: () async {
+              final mode = await showModalBottomSheet<SegmentationMode>(
+                context: context,
+                builder: (context) {
+                  return SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.memory),
+                          title: const Text('ONNX CPU'),
+                          onTap: () =>
+                              Navigator.pop(context, SegmentationMode.onnxCpu),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.bolt),
+                          title: const Text('ONNX CoreML'),
+                          onTap: () => Navigator.pop(
+                              context, SegmentationMode.onnxCoreML),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.bolt_outlined),
+                          title: const Text('Pruned CoreML'),
+                          onTap: () => Navigator.pop(
+                              context, SegmentationMode.prunedCoreML),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+              if (mode != null) {
+                setState(() {
+                  _segmentationMode = mode;
+                });
+                AppLogger.log('Segmentation mode changed to $mode');
+              }
+            },
+            heroTag: 'backend',
+            tooltip: 'Change execution mode',
+            child: const Icon(Icons.tune),
           ),
           if (_mode == InteractionMode.point && _segmentationMask != null) ...[
             const SizedBox(width: 12),

@@ -18,6 +18,12 @@ class SegmentationResult {
   });
 }
 
+enum SegmentationMode {
+  onnxCpu,
+  onnxCoreML,
+  prunedCoreML,
+}
+
 class SegmentationService {
   static bool _envInitialized = false;
 
@@ -27,11 +33,23 @@ class SegmentationService {
     _envInitialized = true;
   }
 
+  static OrtSessionOptions _createOptions(SegmentationMode mode) {
+    final options = OrtSessionOptions();
+    if (mode == SegmentationMode.onnxCoreML ||
+        mode == SegmentationMode.prunedCoreML) {
+      options.appendCoreMLProvider(CoreMLFlags.useNone);
+    } else {
+      options.appendCPUProvider(CPUFlags.useArena);
+    }
+    return options;
+  }
+
   static Future<SegmentationResult> segmentFromPoint({
     required File imageFile,
     required Offset clickPoint,
     required ByteData encoderData,
     required ByteData decoderData,
+    SegmentationMode mode = SegmentationMode.onnxCpu,
   }) {
     return segmentWithPoints(
       imageFile: imageFile,
@@ -41,6 +59,7 @@ class SegmentationService {
       lowResMaskInput: null,
       encoderData: encoderData,
       decoderData: decoderData,
+      mode: mode,
     );
   }
 
@@ -49,6 +68,7 @@ class SegmentationService {
     required Rect bboxPx,
     required ByteData encoderData,
     required ByteData decoderData,
+    SegmentationMode mode = SegmentationMode.onnxCpu,
   }) {
     return segmentWithPoints(
       imageFile: imageFile,
@@ -58,6 +78,7 @@ class SegmentationService {
       lowResMaskInput: null,
       encoderData: encoderData,
       decoderData: decoderData,
+      mode: mode,
     );
   }
 
@@ -69,6 +90,7 @@ class SegmentationService {
     Float32List? lowResMaskInput,
     required ByteData encoderData,
     required ByteData decoderData,
+    SegmentationMode mode = SegmentationMode.onnxCpu,
   }) async {
     _ensureEnvironmentInitialized();
     final imageBytes = await imageFile.readAsBytes();
@@ -76,7 +98,7 @@ class SegmentationService {
 
     final encoderSession = OrtSession.fromBuffer(
       encoderData.buffer.asUint8List(),
-      OrtSessionOptions(),
+      _createOptions(mode),
     );
 
     final encoderInput = convertImageToFloatNCHW(image);
@@ -161,7 +183,7 @@ class SegmentationService {
 
     final decoderSession = OrtSession.fromBuffer(
       decoderData.buffer.asUint8List(),
-      OrtSessionOptions(),
+      _createOptions(mode),
     );
 
     late final Uint8List encodedMask;
