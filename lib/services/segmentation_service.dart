@@ -37,10 +37,13 @@ class SegmentationService {
     final options = OrtSessionOptions();
     if (mode == SegmentationMode.onnxCoreML ||
         mode == SegmentationMode.prunedCoreML) {
-      options.appendCoreMLProvider(CoreMLFlags.useNone);
-    } else {
-      options.appendCPUProvider(CPUFlags.useArena);
+      try {
+        options.appendCoreMLProvider(CoreMLFlags.useNone);
+      } catch (_) {
+        // CoreML provider not available; CPU fallback will be used.
+      }
     }
+    options.appendCPUProvider(CPUFlags.useArena);
     return options;
   }
 

@@ -46,6 +46,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
   SegmentationPointMode _pointMode = SegmentationPointMode.positive;
   bool _isSegmentationInProgress = false;
   SegmentationMode _segmentationMode = SegmentationMode.onnxCpu;
+  InpaintingModel _inpaintingModel = InpaintingModel.fp32;
 
   static const double _baseBrushSceneWidth = 20.0;
   bool get _hasManualDrawing => _points.any((offset) => offset.isFinite);
@@ -77,6 +78,24 @@ class _InpaintingPageState extends State<InpaintingPage> {
       case SegmentationMode.onnxCoreML:
       case SegmentationMode.prunedCoreML:
         return 'CoreML';
+    }
+  }
+
+  String get _inpaintingModelAsset {
+    switch (_inpaintingModel) {
+      case InpaintingModel.fp32:
+        return 'assets/migan.onnx';
+      case InpaintingModel.int8:
+        return 'assets/migan_int8_quant.onnx';
+    }
+  }
+
+  String get _inpaintingModelName {
+    switch (_inpaintingModel) {
+      case InpaintingModel.fp32:
+        return 'migan_fp32';
+      case InpaintingModel.int8:
+        return 'migan_int8';
     }
   }
 
@@ -694,6 +713,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       parameters: {
         'width': _imageWidth!,
         'height': _imageHeight!,
+        'model': _inpaintingModelName,
       },
     );
 
@@ -704,7 +724,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       _maskImage = img.decodeImage(_segmentationMask!)!;
     }
 
-    final modelData = await rootBundle.load('assets/migan.onnx');
+    final modelData = await rootBundle.load(_inpaintingModelAsset);
 
     final dilated = dilateMask(_maskImage!, radius: 20);
 
@@ -724,7 +744,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       name: 'inpainting_completed',
       parameters: {
         'inpainting_duration_ms': durationMs,
-        'model': 'migan',
+        'model': _inpaintingModelName,
       },
     );
 
@@ -1023,12 +1043,62 @@ class _InpaintingPageState extends State<InpaintingPage> {
                 setState(() {
                   _segmentationMode = mode;
                 });
+                FirebaseAnalytics.instance.logEvent(
+                  name: 'segmentation_mode_selected',
+                  parameters: {'mode': _segmentationModelName},
+                );
                 AppLogger.log('Segmentation mode changed to $mode');
               }
             },
             heroTag: 'backend',
             tooltip: 'Change execution mode',
             child: const Icon(Icons.tune),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton(
+            onPressed: () async {
+              final model = await showModalBottomSheet<InpaintingModel>(
+                context: context,
+                builder: (context) {
+                  return SafeArea(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListTile(
+                          leading: const Icon(Icons.memory),
+                          title: const Text('MI-GAN FP32'),
+                          subtitle:
+                              const Text('Higher precision, larger model'),
+                          onTap: () =>
+                              Navigator.pop(context, InpaintingModel.fp32),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.speed),
+                          title: const Text('MI-GAN INT8'),
+                          subtitle:
+                              const Text('Smaller quantized model, faster'),
+                          onTap: () =>
+                              Navigator.pop(context, InpaintingModel.int8),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              );
+              if (model != null) {
+                setState(() {
+                  _inpaintingModel = model;
+                });
+                FirebaseAnalytics.instance.logEvent(
+                  name: 'inpainting_model_selected',
+                  parameters: {'model': _inpaintingModelName},
+                );
+                AppLogger.log('Inpainting model changed to $model');
+              }
+            },
+            heroTag: 'inpaintingModel',
+            tooltip: 'Choose MI-GAN model',
+            child: const Icon(Icons.swap_vert),
           ),
           if (_mode == InteractionMode.point && _segmentationMask != null) ...[
             const SizedBox(width: 12),
@@ -1107,6 +1177,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
 enum InteractionMode { draw, point }
 
 enum SegmentationPointMode { positive, negative }
+
+enum InpaintingModel { fp32, int8 }
 
 class _SegmentationVisuals {
   final Uint8List maskBytes;
