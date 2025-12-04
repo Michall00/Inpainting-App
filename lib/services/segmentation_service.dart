@@ -7,6 +7,7 @@ import 'package:image/image.dart' as img;
 import 'package:onnxruntime/onnxruntime.dart';
 
 import '../utils/tensor_utils.dart';
+import '../utils/app_logger.dart';
 
 class SegmentationResult {
   final Uint8List maskBytes;
@@ -40,11 +41,37 @@ class SegmentationService {
       try {
         options.appendCoreMLProvider(CoreMLFlags.useNone);
       } catch (_) {
-        // CoreML provider not available; CPU fallback will be used.
+        // CoreML provider not available; fallback handled by session builder.
       }
     }
-    options.appendCPUProvider(CPUFlags.useArena);
     return options;
+  }
+
+  static OrtSession _createSession(
+    ByteData modelData,
+    SegmentationMode mode,
+  ) {
+    final buffer = modelData.buffer.asUint8List();
+
+    // Try preferred provider first, then retry with default CPU-only options.
+    try {
+      return OrtSession.fromBuffer(buffer, _createOptions(mode));
+    } catch (error) {
+      if (mode == SegmentationMode.onnxCoreML ||
+          mode == SegmentationMode.prunedCoreML) {
+        AppLogger.log(
+          'Primary CoreML session failed, retrying with CPU. Error: $error',
+        );
+        final cpuOptions = OrtSessionOptions();
+        try {
+          return OrtSession.fromBuffer(buffer, cpuOptions);
+        } catch (_) {
+          cpuOptions.release();
+          rethrow;
+        }
+      }
+      rethrow;
+    }
   }
 
   static Future<SegmentationResult> segmentFromPoint({
@@ -99,10 +126,7 @@ class SegmentationService {
     final imageBytes = await imageFile.readAsBytes();
     final image = img.decodeImage(imageBytes)!;
 
-    final encoderSession = OrtSession.fromBuffer(
-      encoderData.buffer.asUint8List(),
-      _createOptions(mode),
-    );
+    final encoderSession = _createSession(encoderData, mode);
 
     final encoderInput = convertImageToFloatNCHW(image);
 
@@ -184,10 +208,7 @@ class SegmentationService {
       [2],
     );
 
-    final decoderSession = OrtSession.fromBuffer(
-      decoderData.buffer.asUint8List(),
-      _createOptions(mode),
-    );
+    final decoderSession = _createSession(decoderData, mode);
 
     late final Uint8List encodedMask;
     var lowResMaskOutput = Float32List(maskElements);
