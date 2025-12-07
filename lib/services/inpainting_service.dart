@@ -4,6 +4,16 @@ import 'package:onnxruntime/onnxruntime.dart';
 import '../utils/tensor_utils.dart';
 import '../utils/app_logger.dart';
 
+class InpaintingResult {
+  final Uint8List bytes;
+  final int inferenceDurationMs;
+
+  InpaintingResult({
+    required this.bytes,
+    required this.inferenceDurationMs,
+  });
+}
+
 class InpaintingService {
   static bool _envInitialized = false;
 
@@ -48,7 +58,7 @@ class InpaintingService {
     }
   }
 
-  static Future<Uint8List> runInpainting({
+  static Future<InpaintingResult> runInpainting({
     required img.Image original,
     required img.Image mask,
     required ByteData modelData,
@@ -59,18 +69,27 @@ class InpaintingService {
     final imageTensor = convertImageToUint8NCHW(original);
     final maskTensor = convertMaskToUint8NCHW(mask);
 
+    final runOptions = OrtRunOptions();
+    final inferenceStart = DateTime.now();
     final result = session.run(
-      OrtRunOptions(),
+      runOptions,
       {'image': imageTensor, 'mask': maskTensor},
       ['result'],
     );
+    final inferenceMs =
+        DateTime.now().difference(inferenceStart).inMilliseconds;
+    AppLogger.log('Inpainting model inference completed in ${inferenceMs}ms');
 
     imageTensor.release();
     maskTensor.release();
+    runOptions.release();
     session.release();
 
     final output = result[0]!.value as List;
     final imgOut = convertNCHWtoImage(output);
-    return Uint8List.fromList(img.encodeJpg(imgOut));
+    return InpaintingResult(
+      bytes: Uint8List.fromList(img.encodeJpg(imgOut)),
+      inferenceDurationMs: inferenceMs,
+    );
   }
 }

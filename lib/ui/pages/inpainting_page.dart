@@ -103,6 +103,17 @@ class _InpaintingPageState extends State<InpaintingPage> {
     }
   }
 
+  String get _inpaintingQuantizationType {
+    switch (_inpaintingModel) {
+      case InpaintingModel.fp32:
+        return 'fp32';
+      case InpaintingModel.int8Dynamic:
+        return 'int8_dynamic';
+      case InpaintingModel.int8Static:
+        return 'int8_static';
+    }
+  }
+
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
@@ -718,6 +729,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         'width': _imageWidth!,
         'height': _imageHeight!,
         'model': _inpaintingModelName,
+        'quantization': _inpaintingQuantizationType,
       },
     );
 
@@ -738,17 +750,28 @@ class _InpaintingPageState extends State<InpaintingPage> {
       modelData: modelData,
     );
 
+    FirebaseAnalytics.instance.logEvent(
+      name: 'inpainting_inference',
+      parameters: {
+        'model': _inpaintingModelName,
+        'quantization': _inpaintingQuantizationType,
+        'inference_ms': output.inferenceDurationMs,
+      },
+    );
+
     final inpaintingEnd = DateTime.now();
     final durationMs = inpaintingEnd.difference(inpaintingStart).inMilliseconds;
 
-    final decoded = img.decodeImage(output)!;
-    final newTemp = await ImageService.saveTempImage(output, 'input.png');
+    final decoded = img.decodeImage(output.bytes)!;
+    final newTemp = await ImageService.saveTempImage(output.bytes, 'input.png');
 
     FirebaseAnalytics.instance.logEvent(
       name: 'inpainting_completed',
       parameters: {
         'inpainting_duration_ms': durationMs,
+        'inpainting_inference_ms': output.inferenceDurationMs,
         'model': _inpaintingModelName,
+        'quantization': _inpaintingQuantizationType,
       },
     );
 
