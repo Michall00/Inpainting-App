@@ -85,8 +85,10 @@ class _InpaintingPageState extends State<InpaintingPage> {
     switch (_inpaintingModel) {
       case InpaintingModel.fp32:
         return 'assets/migan.onnx';
-      case InpaintingModel.int8:
+      case InpaintingModel.int8Dynamic:
         return 'assets/migan_int8_quant.onnx';
+      case InpaintingModel.int8Static:
+        return 'assets/migan_int8_quant_static.onnx';
     }
   }
 
@@ -94,8 +96,10 @@ class _InpaintingPageState extends State<InpaintingPage> {
     switch (_inpaintingModel) {
       case InpaintingModel.fp32:
         return 'migan_fp32';
-      case InpaintingModel.int8:
-        return 'migan_int8';
+      case InpaintingModel.int8Dynamic:
+        return 'migan_int8_dynamic';
+      case InpaintingModel.int8Static:
+        return 'migan_int8_static';
     }
   }
 
@@ -1074,11 +1078,19 @@ class _InpaintingPageState extends State<InpaintingPage> {
                         ),
                         ListTile(
                           leading: const Icon(Icons.speed),
-                          title: const Text('MI-GAN INT8'),
-                          subtitle:
-                              const Text('Smaller quantized model, faster'),
+                          title: const Text('MI-GAN INT8 (dynamic quant)'),
+                          subtitle: const Text(
+                              'Smaller quantized model, dynamic calibration (may be slower)'),
                           onTap: () =>
-                              Navigator.pop(context, InpaintingModel.int8),
+                              Navigator.pop(context, InpaintingModel.int8Dynamic),
+                        ),
+                        ListTile(
+                          leading: const Icon(Icons.flash_on),
+                          title: const Text('MI-GAN INT8 (static quant)'),
+                          subtitle: const Text(
+                              'Static calibration, fastest quantized option'),
+                          onTap: () =>
+                              Navigator.pop(context, InpaintingModel.int8Static),
                         ),
                       ],
                     ),
@@ -1178,7 +1190,7 @@ enum InteractionMode { draw, point }
 
 enum SegmentationPointMode { positive, negative }
 
-enum InpaintingModel { fp32, int8 }
+enum InpaintingModel { fp32, int8Dynamic, int8Static }
 
 class _SegmentationVisuals {
   final Uint8List maskBytes;
