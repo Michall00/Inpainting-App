@@ -1097,42 +1097,44 @@ class _InpaintingPageState extends State<InpaintingPage> {
                 context: context,
                 builder: (context) {
                   return SafeArea(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ListTile(
-                          leading: const Icon(Icons.memory),
-                          title: const Text('MI-GAN FP32'),
-                          subtitle:
-                              const Text('Higher precision, larger model'),
-                          onTap: () =>
-                              Navigator.pop(context, InpaintingModel.fp32),
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.blur_on),
-                          title: const Text('MI-GAN FP16'),
-                          subtitle: const Text(
-                              'Half precision mixed model, balance speed/quality'),
-                          onTap: () =>
-                              Navigator.pop(context, InpaintingModel.fp16),
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.speed),
-                          title: const Text('MI-GAN INT8 (dynamic quant)'),
-                          subtitle: const Text(
-                              'Smaller quantized model, dynamic calibration (may be slower)'),
-                          onTap: () =>
-                              Navigator.pop(context, InpaintingModel.int8Dynamic),
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.flash_on),
-                          title: const Text('MI-GAN INT8 (static quant)'),
-                          subtitle: const Text(
-                              'Static calibration, fastest quantized option'),
-                          onTap: () =>
-                              Navigator.pop(context, InpaintingModel.int8Static),
-                        ),
-                      ],
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ListTile(
+                            leading: const Icon(Icons.memory),
+                            title: const Text('MI-GAN FP32'),
+                            subtitle:
+                                const Text('Higher precision, larger model'),
+                            onTap: () =>
+                                Navigator.pop(context, InpaintingModel.fp32),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.blur_on),
+                            title: const Text('MI-GAN FP16'),
+                            subtitle: const Text(
+                                'Half precision mixed model, balance speed/quality'),
+                            onTap: () =>
+                                Navigator.pop(context, InpaintingModel.fp16),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.speed),
+                            title: const Text('MI-GAN INT8 (dynamic quant)'),
+                            subtitle: const Text(
+                                'Smaller quantized model, dynamic calibration (may be slower)'),
+                            onTap: () => Navigator.pop(
+                                context, InpaintingModel.int8Dynamic),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.flash_on),
+                            title: const Text('MI-GAN INT8 (static quant)'),
+                            subtitle: const Text(
+                                'Static calibration, fastest quantized option'),
+                            onTap: () => Navigator.pop(
+                                context, InpaintingModel.int8Static),
+                          ),
+                        ],
+                      ),
                     ),
                   );
                 },
@@ -1143,7 +1145,10 @@ class _InpaintingPageState extends State<InpaintingPage> {
                 });
                 FirebaseAnalytics.instance.logEvent(
                   name: 'inpainting_model_selected',
-                  parameters: {'model': _inpaintingModelName},
+                  parameters: {
+                    'model': _inpaintingModelName,
+                    'quantization': _inpaintingQuantizationType,
+                  },
                 );
                 AppLogger.log('Inpainting model changed to $model');
               }
