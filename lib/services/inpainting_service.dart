@@ -16,6 +16,7 @@ class InpaintingResult {
 
 class InpaintingService {
   static bool _envInitialized = false;
+  static String lastExecutionProvider = 'unknown';
 
   static void _ensureEnvironmentInitialized() {
     if (_envInitialized) return;
@@ -40,17 +41,21 @@ class InpaintingService {
 
     // Try CoreML first, then fall back to CPU-only session options.
     try {
-      return OrtSession.fromBuffer(
+      final session = OrtSession.fromBuffer(
         buffer,
         _createSessionOptions(preferCoreML: true),
       );
+      lastExecutionProvider = 'coreml';
+      return session;
     } catch (error) {
       AppLogger.log(
         'Primary CoreML session failed, retrying with CPU. Error: $error',
       );
       final cpuOptions = _createSessionOptions(preferCoreML: false);
       try {
-        return OrtSession.fromBuffer(buffer, cpuOptions);
+        final session = OrtSession.fromBuffer(buffer, cpuOptions);
+        lastExecutionProvider = 'cpu';
+        return session;
       } catch (_) {
         cpuOptions.release();
         rethrow;
@@ -64,7 +69,14 @@ class InpaintingService {
     required ByteData modelData,
   }) async {
     _ensureEnvironmentInitialized();
-    final session = _createSession(modelData);
+    OrtSession session;
+    try {
+      session = _createSession(modelData);
+      lastExecutionProvider = 'coreml';
+    } catch (_) {
+      lastExecutionProvider = 'cpu';
+      rethrow;
+    }
 
     final imageTensor = convertImageToUint8NCHW(original);
     final maskTensor = convertMaskToUint8NCHW(mask);

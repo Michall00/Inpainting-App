@@ -85,6 +85,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
     switch (_inpaintingModel) {
       case InpaintingModel.fp32:
         return 'assets/migan.onnx';
+      case InpaintingModel.fp16:
+        return 'assets/migan_mixed_fp16.onnx';
       case InpaintingModel.int8Dynamic:
         return 'assets/migan_int8_quant.onnx';
       case InpaintingModel.int8Static:
@@ -96,6 +98,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
     switch (_inpaintingModel) {
       case InpaintingModel.fp32:
         return 'migan_fp32';
+      case InpaintingModel.fp16:
+        return 'migan_fp16';
       case InpaintingModel.int8Dynamic:
         return 'migan_int8_dynamic';
       case InpaintingModel.int8Static:
@@ -107,6 +111,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
     switch (_inpaintingModel) {
       case InpaintingModel.fp32:
         return 'fp32';
+      case InpaintingModel.fp16:
+        return 'fp16';
       case InpaintingModel.int8Dynamic:
         return 'int8_dynamic';
       case InpaintingModel.int8Static:
@@ -730,6 +736,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         'height': _imageHeight!,
         'model': _inpaintingModelName,
         'quantization': _inpaintingQuantizationType,
+        'environment': InpaintingService.lastExecutionProvider,
       },
     );
 
@@ -756,6 +763,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         'model': _inpaintingModelName,
         'quantization': _inpaintingQuantizationType,
         'inference_ms': output.inferenceDurationMs,
+        'environment': InpaintingService.lastExecutionProvider,
       },
     );
 
@@ -772,6 +780,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         'inpainting_inference_ms': output.inferenceDurationMs,
         'model': _inpaintingModelName,
         'quantization': _inpaintingQuantizationType,
+        'environment': InpaintingService.lastExecutionProvider,
       },
     );
 
@@ -1100,6 +1109,14 @@ class _InpaintingPageState extends State<InpaintingPage> {
                               Navigator.pop(context, InpaintingModel.fp32),
                         ),
                         ListTile(
+                          leading: const Icon(Icons.blur_on),
+                          title: const Text('MI-GAN FP16'),
+                          subtitle: const Text(
+                              'Half precision mixed model, balance speed/quality'),
+                          onTap: () =>
+                              Navigator.pop(context, InpaintingModel.fp16),
+                        ),
+                        ListTile(
                           leading: const Icon(Icons.speed),
                           title: const Text('MI-GAN INT8 (dynamic quant)'),
                           subtitle: const Text(
@@ -1213,7 +1230,7 @@ enum InteractionMode { draw, point }
 
 enum SegmentationPointMode { positive, negative }
 
-enum InpaintingModel { fp32, int8Dynamic, int8Static }
+enum InpaintingModel { fp32, fp16, int8Dynamic, int8Static }
 
 class _SegmentationVisuals {
   final Uint8List maskBytes;

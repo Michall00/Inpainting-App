@@ -58,6 +58,7 @@ dev_dependencies:
 flutter:
   assets:
     - assets/migan.onnx
+    - assets/migan_mixed_fp16.onnx
     - assets/migan_int8_quant.onnx
     - assets/migan_int8_quant_static.onnx
     - assets/decoder.onnx
