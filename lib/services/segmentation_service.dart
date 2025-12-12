@@ -54,8 +54,14 @@ class SegmentationService {
     final buffer = modelData.buffer.asUint8List();
 
     // Try preferred provider first, then retry with default CPU-only options.
+    OrtSessionOptions? options;
     try {
-      return OrtSession.fromBuffer(buffer, _createOptions(mode));
+      options = _createOptions(mode);
+      final session = OrtSession.fromBuffer(buffer, options);
+      AppLogger.log(
+        'Created segmentation session mode=$mode addr=${session.address}',
+      );
+      return session;
     } catch (error) {
       if (mode == SegmentationMode.onnxCoreML ||
           mode == SegmentationMode.prunedCoreML) {
@@ -64,13 +70,18 @@ class SegmentationService {
         );
         final cpuOptions = OrtSessionOptions();
         try {
-          return OrtSession.fromBuffer(buffer, cpuOptions);
-        } catch (_) {
+          final session = OrtSession.fromBuffer(buffer, cpuOptions);
+          AppLogger.log(
+            'Created CPU segmentation session addr=${session.address}',
+          );
+          return session;
+        } finally {
           cpuOptions.release();
-          rethrow;
         }
       }
       rethrow;
+    } finally {
+      options?.release();
     }
   }
 
@@ -127,17 +138,20 @@ class SegmentationService {
     final image = img.decodeImage(imageBytes)!;
 
     final encoderSession = _createSession(encoderData, mode);
-
     final encoderInput = convertImageToFloatNCHW(image);
-
-    final embeddings = encoderSession.run(
-      OrtRunOptions(),
-      {'input_image': encoderInput},
-      ['image_embeddings'],
-    );
-
-    encoderInput.release();
-    encoderSession.release();
+    final encoderRunOptions = OrtRunOptions();
+    List<OrtValue?> embeddings;
+    try {
+      embeddings = encoderSession.run(
+        encoderRunOptions,
+        {'input_image': encoderInput},
+        ['image_embeddings'],
+      );
+    } finally {
+      encoderRunOptions.release();
+      encoderInput.release();
+      encoderSession.release();
+    }
 
     final imageEmbeddings = embeddings[0]!;
 
@@ -209,6 +223,7 @@ class SegmentationService {
     );
 
     final decoderSession = _createSession(decoderData, mode);
+    final decoderRunOptions = OrtRunOptions();
 
     late final Uint8List encodedMask;
     var lowResMaskOutput = Float32List(maskElements);
@@ -222,7 +237,7 @@ class SegmentationService {
         'orig_im_size': origImSize,
       };
 
-      final outputs = decoderSession.run(OrtRunOptions(), decoderInputs);
+      final outputs = decoderSession.run(decoderRunOptions, decoderInputs);
       try {
         if (outputs.isEmpty || outputs[0] == null) {
           throw StateError('Masks output was not produced by decoder.');
@@ -269,6 +284,10 @@ class SegmentationService {
       hasMaskInput.release();
       origImSize.release();
       imageEmbeddings.release();
+      for (final value in embeddings.skip(1)) {
+        value?.release();
+      }
+      decoderRunOptions.release();
       decoderSession.release();
     }
 

@@ -26,11 +26,12 @@ class InpaintingService {
 
   static OrtSessionOptions _createSessionOptions({bool preferCoreML = true}) {
     final options = OrtSessionOptions();
+
     if (preferCoreML) {
       try {
-        options.appendCoreMLProvider(CoreMLFlags.useNone);
-      } catch (_) {
-        // CoreML provider not available; fallback handled by session builder.
+        options.appendCoreMLProvider(CoreMLFlags.enableOnSubgraph);
+      } catch (e) {
+        AppLogger.log('CoreML provider skipped: $e');
       }
     }
     return options;
@@ -39,27 +40,39 @@ class InpaintingService {
   static OrtSession _createSession(ByteData modelData) {
     final buffer = modelData.buffer.asUint8List();
 
-    // Try CoreML first, then fall back to CPU-only session options.
+    OrtSessionOptions? options;
     try {
+      options = _createSessionOptions(preferCoreML: true);
       final session = OrtSession.fromBuffer(
         buffer,
-        _createSessionOptions(preferCoreML: true),
+        options,
       );
       lastExecutionProvider = 'coreml';
+      AppLogger.log(
+        'Created CoreML inpainting session addr=${session.address}',
+      );
       return session;
     } catch (error) {
       AppLogger.log(
         'Primary CoreML session failed, retrying with CPU. Error: $error',
       );
-      final cpuOptions = _createSessionOptions(preferCoreML: false);
-      try {
-        final session = OrtSession.fromBuffer(buffer, cpuOptions);
-        lastExecutionProvider = 'cpu';
-        return session;
-      } catch (_) {
-        cpuOptions.release();
-        rethrow;
-      }
+    } finally {
+      options?.release();
+    }
+    // Fallback to CPU
+    return _createCpuSession(modelData);
+  }
+
+  static OrtSession _createCpuSession(ByteData modelData) {
+    final buffer = modelData.buffer.asUint8List();
+    final cpuOptions = _createSessionOptions(preferCoreML: false);
+    try {
+      final session = OrtSession.fromBuffer(buffer, cpuOptions);
+      lastExecutionProvider = 'cpu';
+      AppLogger.log('Created CPU inpainting session addr=${session.address}');
+      return session;
+    } finally {
+      cpuOptions.release();
     }
   }
 
@@ -69,39 +82,70 @@ class InpaintingService {
     required ByteData modelData,
   }) async {
     _ensureEnvironmentInitialized();
-    OrtSession session;
-    try {
-      session = _createSession(modelData);
-      lastExecutionProvider = 'coreml';
-    } catch (_) {
-      lastExecutionProvider = 'cpu';
-      rethrow;
-    }
+
+    var session = _createSession(modelData);
 
     final imageTensor = convertImageToUint8NCHW(original);
     final maskTensor = convertMaskToUint8NCHW(mask);
 
     final runOptions = OrtRunOptions();
     final inferenceStart = DateTime.now();
-    final result = session.run(
-      runOptions,
-      {'image': imageTensor, 'mask': maskTensor},
-      ['result'],
-    );
-    final inferenceMs =
-        DateTime.now().difference(inferenceStart).inMilliseconds;
-    AppLogger.log('Inpainting model inference completed in ${inferenceMs}ms');
 
-    imageTensor.release();
-    maskTensor.release();
-    runOptions.release();
-    session.release();
+    List<OrtValue?>? result;
 
-    final output = result[0]!.value as List;
-    final imgOut = convertNCHWtoImage(output);
-    return InpaintingResult(
-      bytes: Uint8List.fromList(img.encodeJpg(imgOut)),
-      inferenceDurationMs: inferenceMs,
-    );
+    try {
+      try {
+        result = session.run(
+          runOptions,
+          {'image': imageTensor, 'mask': maskTensor},
+          ['result'],
+        );
+      } catch (error) {
+        if (lastExecutionProvider == 'coreml') {
+          AppLogger.log(
+              'CoreML inference failed (${error.runtimeType}); retrying on CPU.');
+
+          session.release();
+
+          session = _createCpuSession(modelData);
+          result = session.run(
+            runOptions,
+            {'image': imageTensor, 'mask': maskTensor},
+            ['result'],
+          );
+        } else {
+          rethrow;
+        }
+      }
+
+      final inferenceMs =
+          DateTime.now().difference(inferenceStart).inMilliseconds;
+
+      AppLogger.log(
+          'Inpainting inference completed in ${inferenceMs}ms using $lastExecutionProvider');
+
+      if (result.isEmpty) {
+        throw Exception('Inference returned empty result');
+      }
+
+      final output = result[0]!.value as List;
+      final imgOut = convertNCHWtoImage(output);
+
+      return InpaintingResult(
+        bytes: Uint8List.fromList(img.encodeJpg(imgOut)),
+        inferenceDurationMs: inferenceMs,
+      );
+    } finally {
+      imageTensor.release();
+      maskTensor.release();
+      runOptions.release();
+      session.release();
+
+      if (result != null) {
+        for (final value in result) {
+          value?.release();
+        }
+      }
+    }
   }
 }
