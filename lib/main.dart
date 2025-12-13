@@ -5,6 +5,7 @@ import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'firebase_options.dart';
 import 'app.dart';
+import 'utils/app_logger.dart';
 
 FirebaseAnalytics analytics = FirebaseAnalytics.instance;
 
@@ -15,6 +16,7 @@ void main() async {
   );
   FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
 
+  await AppLogger.init();
   analytics.logEvent(name: 'app_start', parameters: null);
 
   runZonedGuarded(

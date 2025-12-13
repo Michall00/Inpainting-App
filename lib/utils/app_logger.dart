@@ -1,5 +1,6 @@
 import 'dart:developer' as developer;
 
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
@@ -8,6 +9,11 @@ class AppLogger {
   const AppLogger._();
 
   static const String _defaultName = 'InpaintingApp';
+  static String _deviceInfo = 'unknown_device';
+  static String _osVersion = 'unknown_os';
+
+  static String get deviceInfo => _deviceInfo;
+  static String get osVersion => _osVersion;
 
   static FirebaseCrashlytics get _crashlytics {
     if (Firebase.apps.isEmpty) {
@@ -18,6 +24,35 @@ class AppLogger {
     return FirebaseCrashlytics.instance;
   }
 
+  static Future<void> init() async {
+    try {
+      final deviceInfoPlugin = DeviceInfoPlugin();
+      final deviceInfo = await deviceInfoPlugin.deviceInfo;
+
+      if (deviceInfo is AndroidDeviceInfo) {
+        _deviceInfo = '${deviceInfo.manufacturer} ${deviceInfo.model}';
+        _osVersion =
+            'Android ${deviceInfo.version.release} (SDK ${deviceInfo.version.sdkInt})';
+      } else if (deviceInfo is IosDeviceInfo) {
+        _deviceInfo = '${deviceInfo.name} ${deviceInfo.model}';
+        _osVersion = 'iOS ${deviceInfo.systemVersion}';
+      } else {
+        debugPrint('AppLogger: unsupported platform for device info');
+      }
+
+      setKey('device_info', _deviceInfo);
+      setKey('os_version', _osVersion);
+    } catch (error, stackTrace) {
+      debugPrint('AppLogger init failed: $error');
+      developer.log(
+        'AppLogger init failed',
+        error: error,
+        stackTrace: stackTrace,
+        name: _defaultName,
+      );
+    }
+  }
+
   static void log(
     String message, {
     String name = _defaultName,
@@ -25,8 +60,9 @@ class AppLogger {
     Object? error,
     StackTrace? stackTrace,
   }) {
+    final deviceContext = 'device=$_deviceInfo | os=$_osVersion';
     final formattedMessage =
-        error == null ? message : '$message | error: ${error.toString()}';
+        error == null ? '$message | $deviceContext' : '$message | error: ${error.toString()} | $deviceContext';
     if (kDebugMode) {
       debugPrint('[$name] $formattedMessage');
       if (stackTrace != null) {
@@ -34,7 +70,7 @@ class AppLogger {
       }
     }
     developer.log(
-      message,
+      formattedMessage,
       name: name,
       error: error,
       stackTrace: stackTrace,

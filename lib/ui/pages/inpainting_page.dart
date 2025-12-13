@@ -227,6 +227,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
         parameters: {
           'x': point.dx,
           'y': point.dy,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
         },
       );
 
@@ -251,6 +253,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
           'model': _segmentationModelName,
           'model_sparsity': _segmentationModelSparsity,
           'environment': _segmentationEnvironmentName,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
         },
       );
       AppLogger.log(
@@ -321,6 +325,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
           'y1': bbox.top,
           'x2': bbox.right,
           'y2': bbox.bottom,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
         },
       );
 
@@ -339,7 +345,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
         name: 'segmentation_completed',
         parameters: {
           'segmentation_duration_ms': durationMs,
-          'model': 'mobileSAM'
+          'model': 'mobileSAM',
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
         },
       );
       AppLogger.log(
@@ -737,6 +745,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
         'model': _inpaintingModelName,
         'quantization': _inpaintingQuantizationType,
         'environment': InpaintingService.lastExecutionProvider,
+        'device': AppLogger.deviceInfo,
+        'os_version': AppLogger.osVersion,
       },
     );
 
@@ -764,6 +774,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
         'quantization': _inpaintingQuantizationType,
         'inference_ms': output.inferenceDurationMs,
         'environment': InpaintingService.lastExecutionProvider,
+        'device': AppLogger.deviceInfo,
+        'os_version': AppLogger.osVersion,
       },
     );
 
@@ -781,6 +793,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
         'model': _inpaintingModelName,
         'quantization': _inpaintingQuantizationType,
         'environment': InpaintingService.lastExecutionProvider,
+        'device': AppLogger.deviceInfo,
+        'os_version': AppLogger.osVersion,
       },
     );
 
