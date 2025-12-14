@@ -4,6 +4,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:flutter/foundation.dart';
+import 'package:ios_utsname_ext/extension.dart';
 
 class AppLogger {
   const AppLogger._();
@@ -34,7 +35,7 @@ class AppLogger {
         _osVersion =
             'Android ${deviceInfo.version.release} (SDK ${deviceInfo.version.sdkInt})';
       } else if (deviceInfo is IosDeviceInfo) {
-        _deviceInfo = '${deviceInfo.name} ${deviceInfo.model}';
+        _deviceInfo = deviceInfo.utsname.machine.iOSProductName;
         _osVersion = 'iOS ${deviceInfo.systemVersion}';
       } else {
         debugPrint('AppLogger: unsupported platform for device info');

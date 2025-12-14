@@ -40,6 +40,7 @@ dependencies:
   firebase_crashlytics: ^4.3.6
   firebase_analytics: ^11.4.6
   device_info_plus: ^11.2.0
+  ios_utsname_ext: ^2.3.0
 
 dev_dependencies:
   flutter_test:
