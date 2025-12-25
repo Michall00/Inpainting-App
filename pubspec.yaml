@@ -63,9 +63,6 @@ flutter:
     - assets/migan_mixed_fp16.onnx
     - assets/migan_int8_quant.onnx
     - assets/migan_int8_quant_static.onnx
-    - assets/decoder.onnx
-    - assets/encoder.onnx
-    - assets/encoder_shadows.onnx
     - assets/decoder_best.onnx
     - assets/decoder_best_fp16.onnx
     - assets/decoder_best_int8_dynamic.onnx
