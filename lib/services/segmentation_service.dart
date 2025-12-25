@@ -19,14 +19,9 @@ class SegmentationResult {
   });
 }
 
-enum SegmentationMode {
-  onnxCpu,
-  onnxCoreML,
-  prunedCoreML,
-}
-
 class SegmentationService {
   static bool _envInitialized = false;
+  static String lastExecutionProvider = 'unknown';
 
   static void _ensureEnvironmentInitialized() {
     if (_envInitialized) return;
@@ -34,54 +29,52 @@ class SegmentationService {
     _envInitialized = true;
   }
 
-  static OrtSessionOptions _createOptions(SegmentationMode mode) {
+  static OrtSessionOptions _createSessionOptions({bool preferCoreML = true}) {
     final options = OrtSessionOptions();
-    if (mode == SegmentationMode.onnxCoreML ||
-        mode == SegmentationMode.prunedCoreML) {
+    if (preferCoreML) {
       try {
-        options.appendCoreMLProvider(CoreMLFlags.useNone);
-      } catch (_) {
-        // CoreML provider not available; fallback handled by session builder.
+        options.appendCoreMLProvider(CoreMLFlags.enableOnSubgraph);
+      } catch (e) {
+        AppLogger.log('CoreML provider skipped: $e');
       }
     }
     return options;
   }
 
-  static OrtSession _createSession(
-    ByteData modelData,
-    SegmentationMode mode,
-  ) {
+  static OrtSession _createSession(ByteData modelData) {
     final buffer = modelData.buffer.asUint8List();
 
-    // Try preferred provider first, then retry with default CPU-only options.
     OrtSessionOptions? options;
     try {
-      options = _createOptions(mode);
+      options = _createSessionOptions(preferCoreML: true);
       final session = OrtSession.fromBuffer(buffer, options);
+      lastExecutionProvider = 'coreml';
       AppLogger.log(
-        'Created segmentation session mode=$mode addr=${session.address}',
+        'Created CoreML segmentation session addr=${session.address}',
       );
       return session;
     } catch (error) {
-      if (mode == SegmentationMode.onnxCoreML ||
-          mode == SegmentationMode.prunedCoreML) {
-        AppLogger.log(
-          'Primary CoreML session failed, retrying with CPU. Error: $error',
-        );
-        final cpuOptions = OrtSessionOptions();
-        try {
-          final session = OrtSession.fromBuffer(buffer, cpuOptions);
-          AppLogger.log(
-            'Created CPU segmentation session addr=${session.address}',
-          );
-          return session;
-        } finally {
-          cpuOptions.release();
-        }
-      }
-      rethrow;
+      AppLogger.log(
+        'Primary CoreML session failed, retrying with CPU. Error: $error',
+      );
     } finally {
       options?.release();
+    }
+    return _createCpuSession(modelData);
+  }
+
+  static OrtSession _createCpuSession(ByteData modelData) {
+    final buffer = modelData.buffer.asUint8List();
+    final cpuOptions = _createSessionOptions(preferCoreML: false);
+    try {
+      final session = OrtSession.fromBuffer(buffer, cpuOptions);
+      lastExecutionProvider = 'cpu';
+      AppLogger.log(
+        'Created CPU segmentation session addr=${session.address}',
+      );
+      return session;
+    } finally {
+      cpuOptions.release();
     }
   }
 
@@ -90,7 +83,6 @@ class SegmentationService {
     required Offset clickPoint,
     required ByteData encoderData,
     required ByteData decoderData,
-    SegmentationMode mode = SegmentationMode.onnxCpu,
   }) {
     return segmentWithPoints(
       imageFile: imageFile,
@@ -100,7 +92,6 @@ class SegmentationService {
       lowResMaskInput: null,
       encoderData: encoderData,
       decoderData: decoderData,
-      mode: mode,
     );
   }
 
@@ -109,7 +100,6 @@ class SegmentationService {
     required Rect bboxPx,
     required ByteData encoderData,
     required ByteData decoderData,
-    SegmentationMode mode = SegmentationMode.onnxCpu,
   }) {
     return segmentWithPoints(
       imageFile: imageFile,
@@ -119,7 +109,6 @@ class SegmentationService {
       lowResMaskInput: null,
       encoderData: encoderData,
       decoderData: decoderData,
-      mode: mode,
     );
   }
 
@@ -131,13 +120,12 @@ class SegmentationService {
     Float32List? lowResMaskInput,
     required ByteData encoderData,
     required ByteData decoderData,
-    SegmentationMode mode = SegmentationMode.onnxCpu,
   }) async {
     _ensureEnvironmentInitialized();
     final imageBytes = await imageFile.readAsBytes();
     final image = img.decodeImage(imageBytes)!;
 
-    final encoderSession = _createSession(encoderData, mode);
+    final encoderSession = _createSession(encoderData);
     final encoderInput = convertImageToFloatNCHW(image);
     final encoderRunOptions = OrtRunOptions();
     List<OrtValue?> embeddings;
@@ -222,7 +210,7 @@ class SegmentationService {
       [2],
     );
 
-    final decoderSession = _createSession(decoderData, mode);
+    final decoderSession = _createSession(decoderData);
     final decoderRunOptions = OrtRunOptions();
 
     late final Uint8List encodedMask;
