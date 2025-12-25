@@ -272,6 +272,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
         name: 'segmentation_completed',
         parameters: {
           'segmentation_duration_ms': durationMs,
+          'encoder_inference_ms': result.encoderInferenceMs,
+          'decoder_inference_ms': result.decoderInferenceMs,
           'model': _segmentationModelName,
           'quantization': _segmentationQuantizationType,
           'environment': SegmentationService.lastExecutionProvider,
@@ -281,6 +283,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
       );
       AppLogger.log(
         'Segmentation from bbox completed in ${durationMs}ms '
+        'encoder=${result.encoderInferenceMs}ms '
+        'decoder=${result.decoderInferenceMs}ms '
         'model=$_segmentationModelName '
         'quantization=$_segmentationQuantizationType '
         'env=${SegmentationService.lastExecutionProvider}',
@@ -367,6 +371,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
         name: 'segmentation_completed',
         parameters: {
           'segmentation_duration_ms': durationMs,
+          'encoder_inference_ms': result.encoderInferenceMs,
+          'decoder_inference_ms': result.decoderInferenceMs,
           'model': _segmentationModelName,
           'quantization': _segmentationQuantizationType,
           'environment': SegmentationService.lastExecutionProvider,

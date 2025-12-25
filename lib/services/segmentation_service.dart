@@ -12,10 +12,14 @@ import '../utils/app_logger.dart';
 class SegmentationResult {
   final Uint8List maskBytes;
   final Float32List lowResMask;
+  final int encoderInferenceMs;
+  final int decoderInferenceMs;
 
   SegmentationResult({
     required this.maskBytes,
     required this.lowResMask,
+    required this.encoderInferenceMs,
+    required this.decoderInferenceMs,
   });
 }
 
@@ -128,6 +132,7 @@ class SegmentationService {
     final encoderSession = _createSession(encoderData);
     final encoderInput = convertImageToFloatNCHW(image);
     final encoderRunOptions = OrtRunOptions();
+    final encoderStart = DateTime.now();
     List<OrtValue?> embeddings;
     try {
       embeddings = encoderSession.run(
@@ -140,6 +145,8 @@ class SegmentationService {
       encoderInput.release();
       encoderSession.release();
     }
+    final encoderInferenceMs =
+        DateTime.now().difference(encoderStart).inMilliseconds;
 
     final imageEmbeddings = embeddings[0]!;
 
@@ -212,6 +219,7 @@ class SegmentationService {
 
     final decoderSession = _createSession(decoderData);
     final decoderRunOptions = OrtRunOptions();
+    final decoderStart = DateTime.now();
 
     late final Uint8List encodedMask;
     var lowResMaskOutput = Float32List(maskElements);
@@ -279,9 +287,14 @@ class SegmentationService {
       decoderSession.release();
     }
 
+    final decoderInferenceMs =
+        DateTime.now().difference(decoderStart).inMilliseconds;
+
     return SegmentationResult(
       maskBytes: encodedMask,
       lowResMask: lowResMaskOutput,
+      encoderInferenceMs: encoderInferenceMs,
+      decoderInferenceMs: decoderInferenceMs,
     );
   }
 
