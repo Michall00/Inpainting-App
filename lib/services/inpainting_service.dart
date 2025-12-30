@@ -3,6 +3,7 @@ import 'package:image/image.dart' as img;
 import 'package:onnxruntime/onnxruntime.dart';
 import '../utils/tensor_utils.dart';
 import '../utils/app_logger.dart';
+import 'execution_provider.dart';
 
 class InpaintingResult {
   final Uint8List bytes;
@@ -17,6 +18,8 @@ class InpaintingResult {
 class InpaintingService {
   static bool _envInitialized = false;
   static String lastExecutionProvider = 'unknown';
+  static ExecutionProvider preferredExecutionProvider =
+      ExecutionProvider.auto;
 
   static void _ensureEnvironmentInitialized() {
     if (_envInitialized) return;
@@ -38,6 +41,10 @@ class InpaintingService {
   }
 
   static OrtSession _createSession(ByteData modelData) {
+    if (preferredExecutionProvider == ExecutionProvider.cpu) {
+      return _createCpuSession(modelData);
+    }
+
     final buffer = modelData.buffer.asUint8List();
 
     OrtSessionOptions? options;
@@ -53,9 +60,17 @@ class InpaintingService {
       );
       return session;
     } catch (error) {
-      AppLogger.log(
-        'Primary CoreML session failed, retrying with CPU. Error: $error',
-      );
+      final forcedCoreML =
+          preferredExecutionProvider == ExecutionProvider.coreml;
+      if (forcedCoreML) {
+        AppLogger.log(
+          'CoreML forced but failed, falling back to CPU. Error: $error',
+        );
+      } else {
+        AppLogger.log(
+          'Primary CoreML session failed, retrying with CPU. Error: $error',
+        );
+      }
     } finally {
       options?.release();
     }

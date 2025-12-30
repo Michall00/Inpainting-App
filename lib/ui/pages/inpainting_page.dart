@@ -9,6 +9,7 @@ import '../widgets/mask_painter.dart';
 import '../../services/image_service.dart';
 import '../../services/inpainting_service.dart';
 import '../../services/segmentation_service.dart';
+import '../../services/execution_provider.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/image_utils.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
@@ -47,6 +48,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
   bool _isSegmentationInProgress = false;
   SegmentationPrecision _segmentationPrecision = SegmentationPrecision.fp32;
   InpaintingModel _inpaintingModel = InpaintingModel.fp32;
+  ExecutionProvider _executionProvider = ExecutionProvider.auto;
 
   static const double _baseBrushSceneWidth = 20.0;
   bool get _hasManualDrawing => _points.any((offset) => offset.isFinite);
@@ -140,6 +142,14 @@ class _InpaintingPageState extends State<InpaintingPage> {
       case InpaintingModel.int8Static:
         return 'int8_static';
     }
+  }
+
+  String get _executionProviderLabel {
+    return executionProviderLabel(_executionProvider);
+  }
+
+  String get _executionProviderValue {
+    return executionProviderValue(_executionProvider);
   }
 
   Future<void> _pickImage() async {
@@ -1156,6 +1166,77 @@ class _InpaintingPageState extends State<InpaintingPage> {
             heroTag: 'backend',
             tooltip: 'Choose MobileSAM precision',
             child: const Icon(Icons.tune),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton(
+            onPressed: () async {
+              final provider = await showModalBottomSheet<ExecutionProvider>(
+                context: context,
+                builder: (context) {
+                  return SafeArea(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const ListTile(
+                            title: Text('Execution environment'),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.auto_mode),
+                            title: const Text('Auto (CoreML > CPU)'),
+                            subtitle: const Text(
+                                'Try CoreML first, fallback to CPU'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              ExecutionProvider.auto,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.memory),
+                            title: const Text('CPU only'),
+                            subtitle:
+                                const Text('Disable hardware acceleration'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              ExecutionProvider.cpu,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.developer_board),
+                            title: const Text('CoreML only'),
+                            subtitle: const Text(
+                                'Force CoreML (fallback if unsupported)'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              ExecutionProvider.coreml,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+
+              if (provider != null) {
+                setState(() {
+                  _executionProvider = provider;
+                });
+                SegmentationService.preferredExecutionProvider = provider;
+                InpaintingService.preferredExecutionProvider = provider;
+                FirebaseAnalytics.instance.logEvent(
+                  name: 'execution_provider_selected',
+                  parameters: {
+                    'provider': _executionProviderValue,
+                  },
+                );
+                AppLogger.log(
+                    'Execution provider changed to $_executionProviderValue');
+              }
+            },
+            heroTag: 'executionProvider',
+            tooltip: 'Execution environment: $_executionProviderLabel',
+            child: const Icon(Icons.computer),
           ),
           const SizedBox(width: 12),
           FloatingActionButton(
