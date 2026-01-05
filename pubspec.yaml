@@ -71,6 +71,10 @@ flutter:
     - assets/encoder_best_fp16.onnx
     - assets/encoder_best_int8_dynamic.onnx
     - assets/encoder_best_int8_static.onnx
+    - assets/encoder_best_pruned_012.onnx
+    - assets/encoder_best_pruned_025.onnx
+    - assets/encoder_best_pruned_040.onnx
+    - assets/encoder_best_pruned_054.onnx
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.

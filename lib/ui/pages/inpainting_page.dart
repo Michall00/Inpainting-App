@@ -63,6 +63,14 @@ class _InpaintingPageState extends State<InpaintingPage> {
         return 'mobileSAM_int8_dynamic';
       case SegmentationPrecision.int8Static:
         return 'mobileSAM_int8_static';
+      case SegmentationPrecision.pruned012:
+        return 'mobileSAM_pruned_012';
+      case SegmentationPrecision.pruned025:
+        return 'mobileSAM_pruned_025';
+      case SegmentationPrecision.pruned040:
+        return 'mobileSAM_pruned_040';
+      case SegmentationPrecision.pruned054:
+        return 'mobileSAM_pruned_054';
     }
   }
 
@@ -76,6 +84,14 @@ class _InpaintingPageState extends State<InpaintingPage> {
         return 'int8_dynamic';
       case SegmentationPrecision.int8Static:
         return 'int8_static';
+      case SegmentationPrecision.pruned012:
+        return 'pruned_012';
+      case SegmentationPrecision.pruned025:
+        return 'pruned_025';
+      case SegmentationPrecision.pruned040:
+        return 'pruned_040';
+      case SegmentationPrecision.pruned054:
+        return 'pruned_054';
     }
   }
 
@@ -89,6 +105,14 @@ class _InpaintingPageState extends State<InpaintingPage> {
         return 'assets/encoder_best_int8_dynamic.onnx';
       case SegmentationPrecision.int8Static:
         return 'assets/encoder_best_int8_static.onnx';
+      case SegmentationPrecision.pruned012:
+        return 'assets/encoder_best_pruned_012.onnx';
+      case SegmentationPrecision.pruned025:
+        return 'assets/encoder_best_pruned_025.onnx';
+      case SegmentationPrecision.pruned040:
+        return 'assets/encoder_best_pruned_040.onnx';
+      case SegmentationPrecision.pruned054:
+        return 'assets/encoder_best_pruned_054.onnx';
     }
   }
 
@@ -102,6 +126,11 @@ class _InpaintingPageState extends State<InpaintingPage> {
         return 'assets/decoder_best_int8_dynamic.onnx';
       case SegmentationPrecision.int8Static:
         return 'assets/decoder_best_int8_static.onnx';
+      case SegmentationPrecision.pruned012:
+      case SegmentationPrecision.pruned025:
+      case SegmentationPrecision.pruned040:
+      case SegmentationPrecision.pruned054:
+        return 'assets/decoder_best.onnx';
     }
   }
 
@@ -1099,6 +1128,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
+                          const ListTile(
+                            title: Text('MobileSAM (full)'),
+                          ),
                           ListTile(
                             leading: const Icon(Icons.memory),
                             title: const Text('MobileSAM FP32'),
@@ -1141,6 +1173,46 @@ class _InpaintingPageState extends State<InpaintingPage> {
                               SegmentationPrecision.int8Static,
                             ),
                           ),
+                          const ListTile(
+                            title: Text('MobileSAM (pruned encoder)'),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.crop),
+                            title: const Text('MobileSAM FP32 pruned 12'),
+                            subtitle:
+                                const Text('Smallest encoder (pruned 12%)'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              SegmentationPrecision.pruned012,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.crop),
+                            title: const Text('MobileSAM FP32 pruned 25'),
+                            subtitle: const Text('Pruned encoder (25%)'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              SegmentationPrecision.pruned025,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.crop),
+                            title: const Text('MobileSAM FP32 pruned 40'),
+                            subtitle: const Text('Pruned encoder (40%)'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              SegmentationPrecision.pruned040,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.crop),
+                            title: const Text('MobileSAM FP32 pruned 54'),
+                            subtitle: const Text('Pruned encoder (54%)'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              SegmentationPrecision.pruned054,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -1164,7 +1236,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
               }
             },
             heroTag: 'backend',
-            tooltip: 'Choose MobileSAM precision',
+            tooltip: 'Choose MobileSAM model',
             child: const Icon(Icons.tune),
           ),
           const SizedBox(width: 12),
@@ -1383,7 +1455,16 @@ enum InteractionMode { draw, point }
 
 enum SegmentationPointMode { positive, negative }
 
-enum SegmentationPrecision { fp32, fp16, int8Dynamic, int8Static }
+enum SegmentationPrecision {
+  fp32,
+  fp16,
+  int8Dynamic,
+  int8Static,
+  pruned012,
+  pruned025,
+  pruned040,
+  pruned054,
+}
 
 enum InpaintingModel { fp32, fp16, int8Dynamic, int8Static }
 
