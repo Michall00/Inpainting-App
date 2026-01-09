@@ -39,6 +39,8 @@ dependencies:
   firebase_core: ^3.13.1
   firebase_crashlytics: ^4.3.6
   firebase_analytics: ^11.4.6
+  device_info_plus: ^11.2.0
+  ios_utsname_ext: ^2.3.0
 
 dev_dependencies:
   flutter_test:
@@ -58,9 +60,21 @@ dev_dependencies:
 flutter:
   assets:
     - assets/migan.onnx
-    - assets/decoder.onnx
-    - assets/encoder.onnx
-    - assets/encoder_shadows.onnx
+    - assets/migan_mixed_fp16.onnx
+    - assets/migan_int8_quant.onnx
+    - assets/migan_int8_quant_static.onnx
+    - assets/decoder_best.onnx
+    - assets/decoder_best_fp16.onnx
+    - assets/decoder_best_int8_dynamic.onnx
+    - assets/decoder_best_int8_static.onnx
+    - assets/encoder_best.onnx
+    - assets/encoder_best_fp16.onnx
+    - assets/encoder_best_int8_dynamic.onnx
+    - assets/encoder_best_int8_static.onnx
+    - assets/encoder_best_pruned_012.onnx
+    - assets/encoder_best_pruned_025.onnx
+    - assets/encoder_best_pruned_040.onnx
+    - assets/encoder_best_pruned_054.onnx
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.

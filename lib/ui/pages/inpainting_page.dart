@@ -9,6 +9,7 @@ import '../widgets/mask_painter.dart';
 import '../../services/image_service.dart';
 import '../../services/inpainting_service.dart';
 import '../../services/segmentation_service.dart';
+import '../../services/execution_provider.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/image_utils.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
@@ -45,10 +46,141 @@ class _InpaintingPageState extends State<InpaintingPage> {
   final List<Offset> _negativePoints = [];
   SegmentationPointMode _pointMode = SegmentationPointMode.positive;
   bool _isSegmentationInProgress = false;
+  SegmentationPrecision _segmentationPrecision = SegmentationPrecision.fp32;
+  InpaintingModel _inpaintingModel = InpaintingModel.fp32;
+  ExecutionProvider _executionProvider = ExecutionProvider.auto;
 
   static const double _baseBrushSceneWidth = 20.0;
-
   bool get _hasManualDrawing => _points.any((offset) => offset.isFinite);
+
+  String get _segmentationModelName {
+    switch (_segmentationPrecision) {
+      case SegmentationPrecision.fp32:
+        return 'mobileSAM_fp32';
+      case SegmentationPrecision.fp16:
+        return 'mobileSAM_fp16';
+      case SegmentationPrecision.int8Dynamic:
+        return 'mobileSAM_int8_dynamic';
+      case SegmentationPrecision.int8Static:
+        return 'mobileSAM_int8_static';
+      case SegmentationPrecision.pruned012:
+        return 'mobileSAM_pruned_012';
+      case SegmentationPrecision.pruned025:
+        return 'mobileSAM_pruned_025';
+      case SegmentationPrecision.pruned040:
+        return 'mobileSAM_pruned_040';
+      case SegmentationPrecision.pruned054:
+        return 'mobileSAM_pruned_054';
+    }
+  }
+
+  String get _segmentationQuantizationType {
+    switch (_segmentationPrecision) {
+      case SegmentationPrecision.fp32:
+        return 'fp32';
+      case SegmentationPrecision.fp16:
+        return 'fp16';
+      case SegmentationPrecision.int8Dynamic:
+        return 'int8_dynamic';
+      case SegmentationPrecision.int8Static:
+        return 'int8_static';
+      case SegmentationPrecision.pruned012:
+        return 'pruned_012';
+      case SegmentationPrecision.pruned025:
+        return 'pruned_025';
+      case SegmentationPrecision.pruned040:
+        return 'pruned_040';
+      case SegmentationPrecision.pruned054:
+        return 'pruned_054';
+    }
+  }
+
+  String get _segmentationEncoderAsset {
+    switch (_segmentationPrecision) {
+      case SegmentationPrecision.fp32:
+        return 'assets/encoder_best.onnx';
+      case SegmentationPrecision.fp16:
+        return 'assets/encoder_best_fp16.onnx';
+      case SegmentationPrecision.int8Dynamic:
+        return 'assets/encoder_best_int8_dynamic.onnx';
+      case SegmentationPrecision.int8Static:
+        return 'assets/encoder_best_int8_static.onnx';
+      case SegmentationPrecision.pruned012:
+        return 'assets/encoder_best_pruned_012.onnx';
+      case SegmentationPrecision.pruned025:
+        return 'assets/encoder_best_pruned_025.onnx';
+      case SegmentationPrecision.pruned040:
+        return 'assets/encoder_best_pruned_040.onnx';
+      case SegmentationPrecision.pruned054:
+        return 'assets/encoder_best_pruned_054.onnx';
+    }
+  }
+
+  String get _segmentationDecoderAsset {
+    switch (_segmentationPrecision) {
+      case SegmentationPrecision.fp32:
+        return 'assets/decoder_best.onnx';
+      case SegmentationPrecision.fp16:
+        return 'assets/decoder_best_fp16.onnx';
+      case SegmentationPrecision.int8Dynamic:
+        return 'assets/decoder_best_int8_dynamic.onnx';
+      case SegmentationPrecision.int8Static:
+        return 'assets/decoder_best_int8_static.onnx';
+      case SegmentationPrecision.pruned012:
+      case SegmentationPrecision.pruned025:
+      case SegmentationPrecision.pruned040:
+      case SegmentationPrecision.pruned054:
+        return 'assets/decoder_best.onnx';
+    }
+  }
+
+  String get _inpaintingModelAsset {
+    switch (_inpaintingModel) {
+      case InpaintingModel.fp32:
+        return 'assets/migan.onnx';
+      case InpaintingModel.fp16:
+        return 'assets/migan_mixed_fp16.onnx';
+      case InpaintingModel.int8Dynamic:
+        return 'assets/migan_int8_quant.onnx';
+      case InpaintingModel.int8Static:
+        return 'assets/migan_int8_quant_static.onnx';
+    }
+  }
+
+  String get _inpaintingModelName {
+    switch (_inpaintingModel) {
+      case InpaintingModel.fp32:
+        return 'migan_fp32';
+      case InpaintingModel.fp16:
+        return 'migan_fp16';
+      case InpaintingModel.int8Dynamic:
+        return 'migan_int8_dynamic';
+      case InpaintingModel.int8Static:
+        return 'migan_int8_static';
+    }
+  }
+
+  String get _inpaintingQuantizationType {
+    switch (_inpaintingModel) {
+      case InpaintingModel.fp32:
+        return 'fp32';
+      case InpaintingModel.fp16:
+        return 'fp16';
+      case InpaintingModel.int8Dynamic:
+        return 'int8_dynamic';
+      case InpaintingModel.int8Static:
+        return 'int8_static';
+    }
+  }
+
+  String get _executionProviderLabel {
+    return executionProviderLabel(_executionProvider);
+  }
+
+  String get _executionProviderValue {
+    return executionProviderValue(_executionProvider);
+  }
+
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
@@ -156,6 +288,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
         parameters: {
           'x': point.dx,
           'y': point.dy,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
         },
       );
 
@@ -177,11 +311,22 @@ class _InpaintingPageState extends State<InpaintingPage> {
         name: 'segmentation_completed',
         parameters: {
           'segmentation_duration_ms': durationMs,
-          'model': 'mobileSAM'
+          'encoder_inference_ms': result.encoderInferenceMs,
+          'decoder_inference_ms': result.decoderInferenceMs,
+          'model': _segmentationModelName,
+          'quantization': _segmentationQuantizationType,
+          'environment': SegmentationService.lastExecutionProvider,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
         },
       );
       AppLogger.log(
-        'Segmentation from point completed in ${durationMs}ms',
+        'Segmentation from bbox completed in ${durationMs}ms '
+        'encoder=${result.encoderInferenceMs}ms '
+        'decoder=${result.decoderInferenceMs}ms '
+        'model=$_segmentationModelName '
+        'quantization=$_segmentationQuantizationType '
+        'env=${SegmentationService.lastExecutionProvider}',
       );
 
       await _applySegmentationResult(result);
@@ -245,6 +390,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
           'y1': bbox.top,
           'x2': bbox.right,
           'y2': bbox.bottom,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
         },
       );
 
@@ -263,7 +410,13 @@ class _InpaintingPageState extends State<InpaintingPage> {
         name: 'segmentation_completed',
         parameters: {
           'segmentation_duration_ms': durationMs,
-          'model': 'mobileSAM'
+          'encoder_inference_ms': result.encoderInferenceMs,
+          'decoder_inference_ms': result.decoderInferenceMs,
+          'model': _segmentationModelName,
+          'quantization': _segmentationQuantizationType,
+          'environment': SegmentationService.lastExecutionProvider,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
         },
       );
       AppLogger.log(
@@ -301,8 +454,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
     required List<Offset> negativePoints,
     required Float32List? lowResMask,
   }) async {
-    final encoderData = await rootBundle.load('assets/encoder_shadows.onnx');
-    final decoderData = await rootBundle.load('assets/decoder.onnx');
+    final encoderData = await rootBundle.load(_segmentationEncoderAsset);
+    final decoderData = await rootBundle.load(_segmentationDecoderAsset);
+
     return SegmentationService.segmentWithPoints(
       imageFile: _imageFile!,
       bboxPx: bbox,
@@ -648,6 +802,11 @@ class _InpaintingPageState extends State<InpaintingPage> {
       parameters: {
         'width': _imageWidth!,
         'height': _imageHeight!,
+        'model': _inpaintingModelName,
+        'quantization': _inpaintingQuantizationType,
+        'environment': InpaintingService.lastExecutionProvider,
+        'device': AppLogger.deviceInfo,
+        'os_version': AppLogger.osVersion,
       },
     );
 
@@ -658,7 +817,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       _maskImage = img.decodeImage(_segmentationMask!)!;
     }
 
-    final modelData = await rootBundle.load('assets/migan.onnx');
+    final modelData = await rootBundle.load(_inpaintingModelAsset);
 
     final dilated = dilateMask(_maskImage!, radius: 20);
 
@@ -668,17 +827,34 @@ class _InpaintingPageState extends State<InpaintingPage> {
       modelData: modelData,
     );
 
+    FirebaseAnalytics.instance.logEvent(
+      name: 'inpainting_inference',
+      parameters: {
+        'model': _inpaintingModelName,
+        'quantization': _inpaintingQuantizationType,
+        'inference_ms': output.inferenceDurationMs,
+        'environment': InpaintingService.lastExecutionProvider,
+        'device': AppLogger.deviceInfo,
+        'os_version': AppLogger.osVersion,
+      },
+    );
+
     final inpaintingEnd = DateTime.now();
     final durationMs = inpaintingEnd.difference(inpaintingStart).inMilliseconds;
 
-    final decoded = img.decodeImage(output)!;
-    final newTemp = await ImageService.saveTempImage(output, 'input.png');
+    final decoded = img.decodeImage(output.bytes)!;
+    final newTemp = await ImageService.saveTempImage(output.bytes, 'input.png');
 
     FirebaseAnalytics.instance.logEvent(
       name: 'inpainting_completed',
       parameters: {
         'inpainting_duration_ms': durationMs,
-        'model': 'migan',
+        'inpainting_inference_ms': output.inferenceDurationMs,
+        'model': _inpaintingModelName,
+        'quantization': _inpaintingQuantizationType,
+        'environment': InpaintingService.lastExecutionProvider,
+        'device': AppLogger.deviceInfo,
+        'os_version': AppLogger.osVersion,
       },
     );
 
@@ -940,6 +1116,267 @@ class _InpaintingPageState extends State<InpaintingPage> {
             heroTag: 'segment',
             child: const Icon(Icons.crop_square),
           ),
+          const SizedBox(width: 12),
+          FloatingActionButton(
+            onPressed: () async {
+              final precision =
+                  await showModalBottomSheet<SegmentationPrecision>(
+                context: context,
+                builder: (context) {
+                  return SafeArea(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const ListTile(
+                            title: Text('MobileSAM (full)'),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.memory),
+                            title: const Text('MobileSAM FP32'),
+                            subtitle: const Text(
+                                'Highest precision, largest model'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              SegmentationPrecision.fp32,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.blur_on),
+                            title: const Text('MobileSAM FP16'),
+                            subtitle: const Text(
+                                'Half precision, balance speed/quality'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              SegmentationPrecision.fp16,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.speed),
+                            title:
+                                const Text('MobileSAM INT8 (dynamic quant)'),
+                            subtitle: const Text(
+                                'Smaller model, dynamic calibration'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              SegmentationPrecision.int8Dynamic,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.flash_on),
+                            title:
+                                const Text('MobileSAM INT8 (static quant)'),
+                            subtitle: const Text(
+                                'Static calibration, fastest option'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              SegmentationPrecision.int8Static,
+                            ),
+                          ),
+                          const ListTile(
+                            title: Text('MobileSAM (pruned encoder)'),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.crop),
+                            title: const Text('MobileSAM FP32 pruned 12'),
+                            subtitle:
+                                const Text('Smallest encoder (pruned 12%)'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              SegmentationPrecision.pruned012,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.crop),
+                            title: const Text('MobileSAM FP32 pruned 25'),
+                            subtitle: const Text('Pruned encoder (25%)'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              SegmentationPrecision.pruned025,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.crop),
+                            title: const Text('MobileSAM FP32 pruned 40'),
+                            subtitle: const Text('Pruned encoder (40%)'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              SegmentationPrecision.pruned040,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.crop),
+                            title: const Text('MobileSAM FP32 pruned 54'),
+                            subtitle: const Text('Pruned encoder (54%)'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              SegmentationPrecision.pruned054,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+              if (precision != null) {
+                setState(() {
+                  _segmentationPrecision = precision;
+                });
+                FirebaseAnalytics.instance.logEvent(
+                  name: 'segmentation_precision_selected',
+                  parameters: {
+                    'model': _segmentationModelName,
+                    'quantization': _segmentationQuantizationType,
+                  },
+                );
+                AppLogger.log(
+                  'Segmentation precision changed to $precision',
+                );
+              }
+            },
+            heroTag: 'backend',
+            tooltip: 'Choose MobileSAM model',
+            child: const Icon(Icons.tune),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton(
+            onPressed: () async {
+              final provider = await showModalBottomSheet<ExecutionProvider>(
+                context: context,
+                builder: (context) {
+                  return SafeArea(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const ListTile(
+                            title: Text('Execution environment'),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.auto_mode),
+                            title: const Text('Auto (CoreML > CPU)'),
+                            subtitle: const Text(
+                                'Try CoreML first, fallback to CPU'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              ExecutionProvider.auto,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.memory),
+                            title: const Text('CPU only'),
+                            subtitle:
+                                const Text('Disable hardware acceleration'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              ExecutionProvider.cpu,
+                            ),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.developer_board),
+                            title: const Text('CoreML only'),
+                            subtitle: const Text(
+                                'Force CoreML (fallback if unsupported)'),
+                            onTap: () => Navigator.pop(
+                              context,
+                              ExecutionProvider.coreml,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+
+              if (provider != null) {
+                setState(() {
+                  _executionProvider = provider;
+                });
+                SegmentationService.preferredExecutionProvider = provider;
+                InpaintingService.preferredExecutionProvider = provider;
+                FirebaseAnalytics.instance.logEvent(
+                  name: 'execution_provider_selected',
+                  parameters: {
+                    'provider': _executionProviderValue,
+                  },
+                );
+                AppLogger.log(
+                    'Execution provider changed to $_executionProviderValue');
+              }
+            },
+            heroTag: 'executionProvider',
+            tooltip: 'Execution environment: $_executionProviderLabel',
+            child: const Icon(Icons.computer),
+          ),
+          const SizedBox(width: 12),
+          FloatingActionButton(
+            onPressed: () async {
+              final model = await showModalBottomSheet<InpaintingModel>(
+                context: context,
+                builder: (context) {
+                  return SafeArea(
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ListTile(
+                            leading: const Icon(Icons.memory),
+                            title: const Text('MI-GAN FP32'),
+                            subtitle:
+                                const Text('Higher precision, larger model'),
+                            onTap: () =>
+                                Navigator.pop(context, InpaintingModel.fp32),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.blur_on),
+                            title: const Text('MI-GAN FP16'),
+                            subtitle: const Text(
+                                'Half precision mixed model, balance speed/quality'),
+                            onTap: () =>
+                                Navigator.pop(context, InpaintingModel.fp16),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.speed),
+                            title: const Text('MI-GAN INT8 (dynamic quant)'),
+                            subtitle: const Text(
+                                'Smaller quantized model, dynamic calibration (may be slower)'),
+                            onTap: () => Navigator.pop(
+                                context, InpaintingModel.int8Dynamic),
+                          ),
+                          ListTile(
+                            leading: const Icon(Icons.flash_on),
+                            title: const Text('MI-GAN INT8 (static quant)'),
+                            subtitle: const Text(
+                                'Static calibration, fastest quantized option'),
+                            onTap: () => Navigator.pop(
+                                context, InpaintingModel.int8Static),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              );
+              if (model != null) {
+                setState(() {
+                  _inpaintingModel = model;
+                });
+                FirebaseAnalytics.instance.logEvent(
+                  name: 'inpainting_model_selected',
+                  parameters: {
+                    'model': _inpaintingModelName,
+                    'quantization': _inpaintingQuantizationType,
+                  },
+                );
+                AppLogger.log('Inpainting model changed to $model');
+              }
+            },
+            heroTag: 'inpaintingModel',
+            tooltip: 'Choose MI-GAN model',
+            child: const Icon(Icons.swap_vert),
+          ),
           if (_mode == InteractionMode.point && _segmentationMask != null) ...[
             const SizedBox(width: 12),
             FloatingActionButton.small(
@@ -1017,6 +1454,19 @@ class _InpaintingPageState extends State<InpaintingPage> {
 enum InteractionMode { draw, point }
 
 enum SegmentationPointMode { positive, negative }
+
+enum SegmentationPrecision {
+  fp32,
+  fp16,
+  int8Dynamic,
+  int8Static,
+  pruned012,
+  pruned025,
+  pruned040,
+  pruned054,
+}
+
+enum InpaintingModel { fp32, fp16, int8Dynamic, int8Static }
 
 class _SegmentationVisuals {
   final Uint8List maskBytes;
