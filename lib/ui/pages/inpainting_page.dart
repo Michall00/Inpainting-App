@@ -1386,30 +1386,6 @@ class _InpaintingPageState extends State<InpaintingPage>
                       },
               ),
               _buildActionButton(
-                icon: _mode == InteractionMode.draw
-                    ? Icons.brush
-                    : Icons.touch_app,
-                label: _modeLabel,
-                tooltip: 'Toggle drawing mode',
-                isActive: true,
-                onPressed: () {
-                  setState(() {
-                    _mode = _mode == InteractionMode.draw
-                        ? InteractionMode.point
-                        : InteractionMode.draw;
-                    if (_mode == InteractionMode.draw) {
-                      _lastTapImagePoint = null;
-                    }
-                  });
-                },
-              ),
-              _buildActionButton(
-                icon: Icons.crop_square,
-                label: 'Segment',
-                tooltip: 'Run segmentation',
-                onPressed: _isSegmentationInProgress ? null : _onSegmentPressed,
-              ),
-              _buildActionButton(
                 icon: Icons.tune,
                 label: 'SAM',
                 tooltip: 'Choose MobileSAM model',
