@@ -20,6 +20,7 @@ import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:vector_math/vector_math_64.dart' show Matrix4;
 import 'inpainting_session_state.dart';
+import 'model_info.dart';
 import 'inpainting_types.dart';
 
 class InpaintingPage extends StatefulWidget {
@@ -49,166 +50,12 @@ class _InpaintingPageState extends State<InpaintingPage>
   static const double _baseBrushSceneWidth = 20.0;
   bool get _hasManualDrawing => _session.hasManualDrawing;
 
-  String get _segmentationModelName {
-    switch (_segmentationPrecision) {
-      case SegmentationPrecision.fp32:
-        return 'mobileSAM_fp32';
-      case SegmentationPrecision.fp16:
-        return 'mobileSAM_fp16';
-      case SegmentationPrecision.int8Dynamic:
-        return 'mobileSAM_int8_dynamic';
-      case SegmentationPrecision.int8Static:
-        return 'mobileSAM_int8_static';
-      case SegmentationPrecision.pruned012:
-        return 'mobileSAM_pruned_012';
-      case SegmentationPrecision.pruned025:
-        return 'mobileSAM_pruned_025';
-      case SegmentationPrecision.pruned040:
-        return 'mobileSAM_pruned_040';
-      case SegmentationPrecision.pruned054:
-        return 'mobileSAM_pruned_054';
-    }
-  }
-
-  String get _segmentationQuantizationType {
-    switch (_segmentationPrecision) {
-      case SegmentationPrecision.fp32:
-        return 'fp32';
-      case SegmentationPrecision.fp16:
-        return 'fp16';
-      case SegmentationPrecision.int8Dynamic:
-        return 'int8_dynamic';
-      case SegmentationPrecision.int8Static:
-        return 'int8_static';
-      case SegmentationPrecision.pruned012:
-        return 'pruned_012';
-      case SegmentationPrecision.pruned025:
-        return 'pruned_025';
-      case SegmentationPrecision.pruned040:
-        return 'pruned_040';
-      case SegmentationPrecision.pruned054:
-        return 'pruned_054';
-    }
-  }
-
-  String get _segmentationEncoderAsset {
-    switch (_segmentationPrecision) {
-      case SegmentationPrecision.fp32:
-        return 'assets/encoder_best.onnx';
-      case SegmentationPrecision.fp16:
-        return 'assets/encoder_best_fp16.onnx';
-      case SegmentationPrecision.int8Dynamic:
-        return 'assets/encoder_best_int8_dynamic.onnx';
-      case SegmentationPrecision.int8Static:
-        return 'assets/encoder_best_int8_static.onnx';
-      case SegmentationPrecision.pruned012:
-        return 'assets/encoder_best_pruned_012.onnx';
-      case SegmentationPrecision.pruned025:
-        return 'assets/encoder_best_pruned_025.onnx';
-      case SegmentationPrecision.pruned040:
-        return 'assets/encoder_best_pruned_040.onnx';
-      case SegmentationPrecision.pruned054:
-        return 'assets/encoder_best_pruned_054.onnx';
-    }
-  }
-
-  String get _segmentationDecoderAsset {
-    switch (_segmentationPrecision) {
-      case SegmentationPrecision.fp32:
-        return 'assets/decoder_best.onnx';
-      case SegmentationPrecision.fp16:
-        return 'assets/decoder_best_fp16.onnx';
-      case SegmentationPrecision.int8Dynamic:
-        return 'assets/decoder_best_int8_dynamic.onnx';
-      case SegmentationPrecision.int8Static:
-        return 'assets/decoder_best_int8_static.onnx';
-      case SegmentationPrecision.pruned012:
-      case SegmentationPrecision.pruned025:
-      case SegmentationPrecision.pruned040:
-      case SegmentationPrecision.pruned054:
-        return 'assets/decoder_best.onnx';
-    }
-  }
-
-  String get _inpaintingModelAsset {
-    switch (_inpaintingModel) {
-      case InpaintingModel.fp32:
-        return 'assets/migan.onnx';
-      case InpaintingModel.fp16:
-        return 'assets/migan_mixed_fp16.onnx';
-      case InpaintingModel.int8Dynamic:
-        return 'assets/migan_int8_quant.onnx';
-      case InpaintingModel.int8Static:
-        return 'assets/migan_int8_quant_static.onnx';
-    }
-  }
-
-  String get _inpaintingModelName {
-    switch (_inpaintingModel) {
-      case InpaintingModel.fp32:
-        return 'migan_fp32';
-      case InpaintingModel.fp16:
-        return 'migan_fp16';
-      case InpaintingModel.int8Dynamic:
-        return 'migan_int8_dynamic';
-      case InpaintingModel.int8Static:
-        return 'migan_int8_static';
-    }
-  }
-
-  String get _inpaintingQuantizationType {
-    switch (_inpaintingModel) {
-      case InpaintingModel.fp32:
-        return 'fp32';
-      case InpaintingModel.fp16:
-        return 'fp16';
-      case InpaintingModel.int8Dynamic:
-        return 'int8_dynamic';
-      case InpaintingModel.int8Static:
-        return 'int8_static';
-    }
-  }
-
   String get _executionProviderLabel {
     return executionProviderLabel(_executionProvider);
   }
 
   String get _executionProviderValue {
     return executionProviderValue(_executionProvider);
-  }
-
-  String get _segmentationPrecisionLabel {
-    switch (_segmentationPrecision) {
-      case SegmentationPrecision.fp32:
-        return 'SAM FP32';
-      case SegmentationPrecision.fp16:
-        return 'SAM FP16';
-      case SegmentationPrecision.int8Dynamic:
-        return 'SAM INT8 Dyn';
-      case SegmentationPrecision.int8Static:
-        return 'SAM INT8 Static';
-      case SegmentationPrecision.pruned012:
-        return 'SAM Pruned 12';
-      case SegmentationPrecision.pruned025:
-        return 'SAM Pruned 25';
-      case SegmentationPrecision.pruned040:
-        return 'SAM Pruned 40';
-      case SegmentationPrecision.pruned054:
-        return 'SAM Pruned 54';
-    }
-  }
-
-  String get _inpaintingModelLabel {
-    switch (_inpaintingModel) {
-      case InpaintingModel.fp32:
-        return 'MI-GAN FP32';
-      case InpaintingModel.fp16:
-        return 'MI-GAN FP16';
-      case InpaintingModel.int8Dynamic:
-        return 'MI-GAN INT8 Dyn';
-      case InpaintingModel.int8Static:
-        return 'MI-GAN INT8 Static';
-    }
   }
 
   @override
@@ -226,8 +73,7 @@ class _InpaintingPageState extends State<InpaintingPage>
   }
 
   void _updateMaskPulse() {
-    final shouldPulse =
-        !_isSegmentationInProgress && !_isInpaintingInProgress;
+    final shouldPulse = !_isSegmentationInProgress && !_isInpaintingInProgress;
     if (shouldPulse) {
       if (!_maskPulseController.isAnimating) {
         _maskPulseController.repeat(reverse: true);
@@ -363,8 +209,8 @@ class _InpaintingPageState extends State<InpaintingPage>
           'segmentation_duration_ms': durationMs,
           'encoder_inference_ms': result.encoderInferenceMs,
           'decoder_inference_ms': result.decoderInferenceMs,
-          'model': _segmentationModelName,
-          'quantization': _segmentationQuantizationType,
+          'model': _segmentationPrecision.modelName,
+          'quantization': _segmentationPrecision.quantizationType,
           'environment': SegmentationService.lastExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
@@ -374,8 +220,8 @@ class _InpaintingPageState extends State<InpaintingPage>
         'Segmentation from bbox completed in ${durationMs}ms '
         'encoder=${result.encoderInferenceMs}ms '
         'decoder=${result.decoderInferenceMs}ms '
-        'model=$_segmentationModelName '
-        'quantization=$_segmentationQuantizationType '
+        'model=${_segmentationPrecision.modelName} '
+        'quantization=${_segmentationPrecision.quantizationType} '
         'env=${SegmentationService.lastExecutionProvider}',
       );
 
@@ -420,7 +266,8 @@ class _InpaintingPageState extends State<InpaintingPage>
       if (_session.segmentationMask != null) {
         _session.maskImage = img.decodeImage(_session.segmentationMask!)!;
       } else {
-        _session.maskImage = _createBlankMaskImage(_session.imageWidth!, _session.imageHeight!);
+        _session.maskImage =
+            _createBlankMaskImage(_session.imageWidth!, _session.imageHeight!);
       }
     });
   }
@@ -461,8 +308,8 @@ class _InpaintingPageState extends State<InpaintingPage>
           'segmentation_duration_ms': durationMs,
           'encoder_inference_ms': result.encoderInferenceMs,
           'decoder_inference_ms': result.decoderInferenceMs,
-          'model': _segmentationModelName,
-          'quantization': _segmentationQuantizationType,
+          'model': _segmentationPrecision.modelName,
+          'quantization': _segmentationPrecision.quantizationType,
           'environment': SegmentationService.lastExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
@@ -503,8 +350,10 @@ class _InpaintingPageState extends State<InpaintingPage>
     required List<Offset> negativePoints,
     required Float32List? lowResMask,
   }) async {
-    final encoderData = await rootBundle.load(_segmentationEncoderAsset);
-    final decoderData = await rootBundle.load(_segmentationDecoderAsset);
+    final encoderData =
+        await rootBundle.load(_segmentationPrecision.encoderAsset);
+    final decoderData =
+        await rootBundle.load(_segmentationPrecision.decoderAsset);
 
     return SegmentationService.segmentWithPoints(
       imageFile: _session.imageFile!,
@@ -750,10 +599,12 @@ class _InpaintingPageState extends State<InpaintingPage>
     );
     final widthScale = _session.maskImage!.width / drawW;
     final heightScale = _session.maskImage!.height / drawH;
-    final centerX =
-        (clamped.dx * widthScale).round().clamp(0, _session.maskImage!.width - 1);
-    final centerY =
-        (clamped.dy * heightScale).round().clamp(0, _session.maskImage!.height - 1);
+    final centerX = (clamped.dx * widthScale)
+        .round()
+        .clamp(0, _session.maskImage!.width - 1);
+    final centerY = (clamped.dy * heightScale)
+        .round()
+        .clamp(0, _session.maskImage!.height - 1);
 
     final brushRadiusScene = math.max(1.0, brushSceneWidth / 2.0);
     final radiusX = math.max(1, (brushRadiusScene * widthScale).round());
@@ -874,8 +725,8 @@ class _InpaintingPageState extends State<InpaintingPage>
         parameters: {
           'width': _session.imageWidth!,
           'height': _session.imageHeight!,
-          'model': _inpaintingModelName,
-          'quantization': _inpaintingQuantizationType,
+          'model': _inpaintingModel.modelName,
+          'quantization': _inpaintingModel.quantizationType,
           'environment': InpaintingService.lastExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
@@ -889,7 +740,7 @@ class _InpaintingPageState extends State<InpaintingPage>
         _session.maskImage = img.decodeImage(_session.segmentationMask!)!;
       }
 
-      final modelData = await rootBundle.load(_inpaintingModelAsset);
+      final modelData = await rootBundle.load(_inpaintingModel.asset);
 
       final dilated = dilateMask(_session.maskImage!, radius: 20);
 
@@ -902,8 +753,8 @@ class _InpaintingPageState extends State<InpaintingPage>
       FirebaseAnalytics.instance.logEvent(
         name: 'inpainting_inference',
         parameters: {
-          'model': _inpaintingModelName,
-          'quantization': _inpaintingQuantizationType,
+          'model': _inpaintingModel.modelName,
+          'quantization': _inpaintingModel.quantizationType,
           'inference_ms': output.inferenceDurationMs,
           'environment': InpaintingService.lastExecutionProvider,
           'device': AppLogger.deviceInfo,
@@ -924,8 +775,8 @@ class _InpaintingPageState extends State<InpaintingPage>
         parameters: {
           'inpainting_duration_ms': durationMs,
           'inpainting_inference_ms': output.inferenceDurationMs,
-          'model': _inpaintingModelName,
-          'quantization': _inpaintingQuantizationType,
+          'model': _inpaintingModel.modelName,
+          'quantization': _inpaintingModel.quantizationType,
           'environment': InpaintingService.lastExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
@@ -1084,8 +935,7 @@ class _InpaintingPageState extends State<InpaintingPage>
                 ListTile(
                   leading: const Icon(Icons.blur_on),
                   title: const Text('MobileSAM FP16'),
-                  subtitle:
-                      const Text('Half precision, balance speed/quality'),
+                  subtitle: const Text('Half precision, balance speed/quality'),
                   onTap: () => Navigator.pop(
                     context,
                     SegmentationPrecision.fp16,
@@ -1094,8 +944,7 @@ class _InpaintingPageState extends State<InpaintingPage>
                 ListTile(
                   leading: const Icon(Icons.speed),
                   title: const Text('MobileSAM INT8 (dynamic quant)'),
-                  subtitle:
-                      const Text('Smaller model, dynamic calibration'),
+                  subtitle: const Text('Smaller model, dynamic calibration'),
                   onTap: () => Navigator.pop(
                     context,
                     SegmentationPrecision.int8Dynamic,
@@ -1162,8 +1011,8 @@ class _InpaintingPageState extends State<InpaintingPage>
       FirebaseAnalytics.instance.logEvent(
         name: 'segmentation_precision_selected',
         parameters: {
-          'model': _segmentationModelName,
-          'quantization': _segmentationQuantizationType,
+          'model': _segmentationPrecision.modelName,
+          'quantization': _segmentationPrecision.quantizationType,
         },
       );
       AppLogger.log('Segmentation precision changed to $precision');
@@ -1266,8 +1115,8 @@ class _InpaintingPageState extends State<InpaintingPage>
                 ListTile(
                   leading: const Icon(Icons.flash_on),
                   title: const Text('MI-GAN INT8 (static quant)'),
-                  subtitle:
-                      const Text('Static calibration, fastest quantized option'),
+                  subtitle: const Text(
+                      'Static calibration, fastest quantized option'),
                   onTap: () =>
                       Navigator.pop(context, InpaintingModel.int8Static),
                 ),
@@ -1284,8 +1133,8 @@ class _InpaintingPageState extends State<InpaintingPage>
       FirebaseAnalytics.instance.logEvent(
         name: 'inpainting_model_selected',
         parameters: {
-          'model': _inpaintingModelName,
-          'quantization': _inpaintingQuantizationType,
+          'model': _inpaintingModel.modelName,
+          'quantization': _inpaintingModel.quantizationType,
         },
       );
       AppLogger.log('Inpainting model changed to $model');
@@ -1365,8 +1214,8 @@ class _InpaintingPageState extends State<InpaintingPage>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 InpaintingHeader(
-                  segmentationPrecisionLabel: _segmentationPrecisionLabel,
-                  inpaintingModelLabel: _inpaintingModelLabel,
+                  segmentationPrecisionLabel: _segmentationPrecision.label,
+                  inpaintingModelLabel: _inpaintingModel.label,
                   executionProviderLabel: _executionProviderLabel,
                   isSegmentationInProgress: _isSegmentationInProgress,
                 ),
@@ -1413,10 +1262,12 @@ class _InpaintingPageState extends State<InpaintingPage>
         onSelectSegmentationModel: _selectSegmentationPrecision,
         onSelectExecutionProvider: _selectExecutionProvider,
         onSelectInpaintingModel: _selectInpaintingModel,
-        showHintControls:
-            _session.mode == InteractionMode.point && _session.segmentationMask != null,
-        isPositiveSelected: _session.pointMode == SegmentationPointMode.positive,
-        isNegativeSelected: _session.pointMode == SegmentationPointMode.negative,
+        showHintControls: _session.mode == InteractionMode.point &&
+            _session.segmentationMask != null,
+        isPositiveSelected:
+            _session.pointMode == SegmentationPointMode.positive,
+        isNegativeSelected:
+            _session.pointMode == SegmentationPointMode.negative,
         isSegmentationInProgress: _isSegmentationInProgress,
         onSelectPositive: () {
           setState(() => _session.pointMode = SegmentationPointMode.positive);
