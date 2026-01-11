@@ -1038,13 +1038,6 @@ class _InpaintingPageState extends State<InpaintingPage> {
                           ),
                         ),
                       ),
-                      if (_bbox != null)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            ignoring: true,
-                            child: CustomPaint(painter: BBoxPainter(_bbox!)),
-                          ),
-                        ),
                       if ((_positivePoints.isNotEmpty ||
                               _negativePoints.isNotEmpty) &&
                           _imageWidth != null &&

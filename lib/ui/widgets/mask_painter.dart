@@ -27,27 +27,6 @@ class MaskPainter extends CustomPainter {
       oldDelegate.strokeWidth != strokeWidth;
 }
 
-class BBoxPainter extends CustomPainter {
-  final Rect box;
-  final Color color;
-
-  BBoxPainter(this.box, {this.color = Colors.red});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (box.isEmpty) return;
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..color = color;
-    canvas.drawRect(box, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant BBoxPainter oldDelegate) =>
-      oldDelegate.box != box || oldDelegate.color != color;
-}
-
 class SquarePointPainter extends CustomPainter {
   final Offset point;
   final Size imageSize;
