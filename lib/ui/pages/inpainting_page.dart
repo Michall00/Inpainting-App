@@ -6,6 +6,10 @@ import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import '../widgets/mask_painter.dart';
+import '../widgets/inpainting_action_bar.dart';
+import '../widgets/inpainting_background.dart';
+import '../widgets/inpainting_empty_state.dart';
+import '../widgets/inpainting_header.dart';
 import '../../services/image_service.dart';
 import '../../services/inpainting_service.dart';
 import '../../services/segmentation_service.dart';
@@ -185,10 +189,6 @@ class _InpaintingPageState extends State<InpaintingPage>
 
   String get _executionProviderValue {
     return executionProviderValue(_executionProvider);
-  }
-
-  String get _modeLabel {
-    return _mode == InteractionMode.draw ? 'Draw' : 'Point';
   }
 
   String get _segmentationPrecisionLabel {
@@ -1182,566 +1182,242 @@ class _InpaintingPageState extends State<InpaintingPage>
     super.dispose();
   }
 
-  Widget _buildBackground() {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            Color(0xFFF6F2EA),
-            Color(0xFFE7EFEA),
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-    );
+  Future<void> _saveCurrentImage() async {
+    if (_imageFile == null) return;
+    final bytes = await _imageFile!.readAsBytes();
+    await _saveImageToGallery(bytes);
   }
 
-  Widget _buildHeader() {
-    final textTheme = Theme.of(context).textTheme;
-    final colorScheme = Theme.of(context).colorScheme;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Inpainting Studio',
-            style: textTheme.headlineSmall?.copyWith(
-              color: colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Mask, refine, and repair in a single workspace.',
-            style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurface.withOpacity(0.7),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              _buildStatusPill(
-                icon: Icons.tune,
-                label: _segmentationPrecisionLabel,
-              ),
-              _buildStatusPill(
-                icon: Icons.auto_fix_high,
-                label: _inpaintingModelLabel,
-              ),
-              _buildStatusPill(
-                icon: Icons.computer,
-                label: _executionProviderLabel,
-              ),
-            ],
-          ),
-          if (_isSegmentationInProgress) ...[
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                minHeight: 6,
-                color: colorScheme.primary,
-                backgroundColor: colorScheme.surfaceVariant,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatusPill({
-    required IconData icon,
-    required String label,
-    Color? color,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final effectiveColor = color ?? colorScheme.primary;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: effectiveColor.withOpacity(0.12),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: effectiveColor.withOpacity(0.2)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: effectiveColor),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: effectiveColor,
-                  fontWeight: FontWeight.w600,
+  Future<void> _selectSegmentationPrecision() async {
+    final precision = await showModalBottomSheet<SegmentationPrecision>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ListTile(
+                  title: Text('MobileSAM (full)'),
                 ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    final colorScheme = Theme.of(context).colorScheme;
-    final textTheme = Theme.of(context).textTheme;
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 84,
-            height: 84,
-            decoration: BoxDecoration(
-              color: colorScheme.primary.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(26),
-            ),
-            child: Icon(
-              Icons.photo_size_select_actual_outlined,
-              size: 44,
-              color: colorScheme.primary,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Start with a photo',
-            style: textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            'Pick an image to begin masking and inpainting.',
-            style: textTheme.bodyMedium?.copyWith(
-              color: colorScheme.onSurface.withOpacity(0.65),
-            ),
-            textAlign: TextAlign.center,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildActionBar() {
-    final colorScheme = Theme.of(context).colorScheme;
-    return SafeArea(
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 4, 16, 12),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        decoration: BoxDecoration(
-          color: colorScheme.surface.withOpacity(0.92),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: colorScheme.outline.withOpacity(0.1)),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.08),
-              blurRadius: 16,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildActionButton(
-                icon: Icons.photo_library,
-                label: 'Gallery',
-                tooltip: 'Pick from gallery',
-                onPressed: _pickImage,
-              ),
-              _buildActionButton(
-                icon: Icons.camera_alt,
-                label: 'Camera',
-                tooltip: 'Take a photo',
-                onPressed: _pickImageFromCamera,
-              ),
-              _buildActionButton(
-                icon: Icons.auto_fix_high,
-                label: 'Inpaint',
-                tooltip: 'Run inpainting',
-                isPrimary: true,
-                onPressed: _runInpainting,
-              ),
-              _buildActionButton(
-                icon: Icons.save_alt,
-                label: 'Save',
-                tooltip: 'Save to gallery',
-                onPressed: _imageFile == null
-                    ? null
-                    : () async {
-                        final bytes = await _imageFile!.readAsBytes();
-                        await _saveImageToGallery(bytes);
-                      },
-              ),
-              _buildActionButton(
-                icon: Icons.tune,
-                label: 'SAM',
-                tooltip: 'Choose MobileSAM model',
-                onPressed: () async {
-                  final precision =
-                      await showModalBottomSheet<SegmentationPrecision>(
-                    context: context,
-                    builder: (context) {
-                      return SafeArea(
-                        child: SingleChildScrollView(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const ListTile(
-                                title: Text('MobileSAM (full)'),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.memory),
-                                title: const Text('MobileSAM FP32'),
-                                subtitle: const Text(
-                                    'Highest precision, largest model'),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  SegmentationPrecision.fp32,
-                                ),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.blur_on),
-                                title: const Text('MobileSAM FP16'),
-                                subtitle: const Text(
-                                    'Half precision, balance speed/quality'),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  SegmentationPrecision.fp16,
-                                ),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.speed),
-                                title: const Text(
-                                    'MobileSAM INT8 (dynamic quant)'),
-                                subtitle: const Text(
-                                    'Smaller model, dynamic calibration'),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  SegmentationPrecision.int8Dynamic,
-                                ),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.flash_on),
-                                title:
-                                    const Text('MobileSAM INT8 (static quant)'),
-                                subtitle: const Text(
-                                    'Static calibration, fastest option'),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  SegmentationPrecision.int8Static,
-                                ),
-                              ),
-                              const ListTile(
-                                title: Text('MobileSAM (pruned encoder)'),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.crop),
-                                title: const Text('MobileSAM FP32 pruned 12'),
-                                subtitle: const Text(
-                                    'Smallest encoder (pruned 12%)'),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  SegmentationPrecision.pruned012,
-                                ),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.crop),
-                                title: const Text('MobileSAM FP32 pruned 25'),
-                                subtitle: const Text('Pruned encoder (25%)'),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  SegmentationPrecision.pruned025,
-                                ),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.crop),
-                                title: const Text('MobileSAM FP32 pruned 40'),
-                                subtitle: const Text('Pruned encoder (40%)'),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  SegmentationPrecision.pruned040,
-                                ),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.crop),
-                                title: const Text('MobileSAM FP32 pruned 54'),
-                                subtitle: const Text('Pruned encoder (54%)'),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  SegmentationPrecision.pruned054,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                  if (precision != null) {
-                    setState(() {
-                      _segmentationPrecision = precision;
-                    });
-                    FirebaseAnalytics.instance.logEvent(
-                      name: 'segmentation_precision_selected',
-                      parameters: {
-                        'model': _segmentationModelName,
-                        'quantization': _segmentationQuantizationType,
-                      },
-                    );
-                    AppLogger.log(
-                      'Segmentation precision changed to $precision',
-                    );
-                  }
-                },
-              ),
-              _buildActionButton(
-                icon: Icons.computer,
-                label: 'Exec',
-                tooltip: 'Execution environment',
-                onPressed: () async {
-                  final provider = await showModalBottomSheet<ExecutionProvider>(
-                    context: context,
-                    builder: (context) {
-                      return SafeArea(
-                        child: SingleChildScrollView(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const ListTile(
-                                title: Text('Execution environment'),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.auto_mode),
-                                title: const Text('Auto (CoreML > CPU)'),
-                                subtitle: const Text(
-                                    'Try CoreML first, fallback to CPU'),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  ExecutionProvider.auto,
-                                ),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.memory),
-                                title: const Text('CPU only'),
-                                subtitle: const Text(
-                                    'Disable hardware acceleration'),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  ExecutionProvider.cpu,
-                                ),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.developer_board),
-                                title: const Text('CoreML only'),
-                                subtitle: const Text(
-                                    'Force CoreML (fallback if unsupported)'),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  ExecutionProvider.coreml,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  );
-
-                  if (provider != null) {
-                    setState(() {
-                      _executionProvider = provider;
-                    });
-                    SegmentationService.preferredExecutionProvider = provider;
-                    InpaintingService.preferredExecutionProvider = provider;
-                    FirebaseAnalytics.instance.logEvent(
-                      name: 'execution_provider_selected',
-                      parameters: {
-                        'provider': _executionProviderValue,
-                      },
-                    );
-                    AppLogger.log(
-                        'Execution provider changed to $_executionProviderValue');
-                  }
-                },
-              ),
-              _buildActionButton(
-                icon: Icons.swap_vert,
-                label: 'MI-GAN',
-                tooltip: 'Choose MI-GAN model',
-                onPressed: () async {
-                  final model = await showModalBottomSheet<InpaintingModel>(
-                    context: context,
-                    builder: (context) {
-                      return SafeArea(
-                        child: SingleChildScrollView(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              ListTile(
-                                leading: const Icon(Icons.memory),
-                                title: const Text('MI-GAN FP32'),
-                                subtitle: const Text(
-                                    'Higher precision, larger model'),
-                                onTap: () => Navigator.pop(
-                                    context, InpaintingModel.fp32),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.blur_on),
-                                title: const Text('MI-GAN FP16'),
-                                subtitle: const Text(
-                                    'Half precision mixed model, balance speed/quality'),
-                                onTap: () => Navigator.pop(
-                                    context, InpaintingModel.fp16),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.speed),
-                                title: const Text(
-                                    'MI-GAN INT8 (dynamic quant)'),
-                                subtitle: const Text(
-                                    'Smaller quantized model, dynamic calibration (may be slower)'),
-                                onTap: () => Navigator.pop(
-                                    context, InpaintingModel.int8Dynamic),
-                              ),
-                              ListTile(
-                                leading: const Icon(Icons.flash_on),
-                                title:
-                                    const Text('MI-GAN INT8 (static quant)'),
-                                subtitle: const Text(
-                                    'Static calibration, fastest quantized option'),
-                                onTap: () => Navigator.pop(
-                                    context, InpaintingModel.int8Static),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  );
-                  if (model != null) {
-                    setState(() {
-                      _inpaintingModel = model;
-                    });
-                    FirebaseAnalytics.instance.logEvent(
-                      name: 'inpainting_model_selected',
-                      parameters: {
-                        'model': _inpaintingModelName,
-                        'quantization': _inpaintingQuantizationType,
-                      },
-                    );
-                    AppLogger.log('Inpainting model changed to $model');
-                  }
-                },
-              ),
-              if (_mode == InteractionMode.point && _segmentationMask != null)
-                _buildActionButton(
-                  icon: Icons.add_circle,
-                  label: 'Add',
-                  tooltip: 'Positive hint',
-                  isActive: _pointMode == SegmentationPointMode.positive,
-                  activeColor: Colors.green,
-                  onPressed: _isSegmentationInProgress
-                      ? null
-                      : () {
-                          setState(
-                            () =>
-                                _pointMode = SegmentationPointMode.positive,
-                          );
-                        },
-                ),
-              if (_mode == InteractionMode.point && _segmentationMask != null)
-                _buildActionButton(
-                  icon: Icons.remove_circle,
-                  label: 'Erase',
-                  tooltip: 'Negative hint',
-                  isActive: _pointMode == SegmentationPointMode.negative,
-                  activeColor: Colors.red,
-                  onPressed: _isSegmentationInProgress
-                      ? null
-                      : () {
-                          setState(
-                            () =>
-                                _pointMode = SegmentationPointMode.negative,
-                          );
-                        },
-                ),
-              if (_mode == InteractionMode.draw && _hasManualDrawing)
-                _buildActionButton(
-                  icon: Icons.clear,
-                  label: 'Clear',
-                  tooltip: 'Clear drawing',
-                  onPressed: _clearManualMask,
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildActionButton({
-    required IconData icon,
-    required String label,
-    required String tooltip,
-    required VoidCallback? onPressed,
-    bool isActive = false,
-    bool isPrimary = false,
-    Color? activeColor,
-  }) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final isEnabled = onPressed != null;
-    final baseColor =
-        isPrimary ? colorScheme.primary : colorScheme.surfaceVariant;
-    final activeBase = activeColor ?? colorScheme.primary;
-
-    final background = isActive ? activeBase : baseColor;
-    final foreground =
-        isActive ? colorScheme.onPrimary : colorScheme.onSurfaceVariant;
-
-    final effectiveBackground =
-        isEnabled ? background : background.withOpacity(0.5);
-    final effectiveForeground =
-        isEnabled ? foreground : foreground.withOpacity(0.4);
-
-    return Tooltip(
-      message: tooltip,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Material(
-              color: effectiveBackground,
-              borderRadius: BorderRadius.circular(16),
-              child: InkWell(
-                onTap: onPressed,
-                borderRadius: BorderRadius.circular(16),
-                child: SizedBox(
-                  width: 48,
-                  height: 48,
-                  child: Icon(icon, color: effectiveForeground),
-                ),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: isEnabled
-                        ? colorScheme.onSurface
-                        : colorScheme.onSurface.withOpacity(0.4),
+                ListTile(
+                  leading: const Icon(Icons.memory),
+                  title: const Text('MobileSAM FP32'),
+                  subtitle: const Text('Highest precision, largest model'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.fp32,
                   ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.blur_on),
+                  title: const Text('MobileSAM FP16'),
+                  subtitle:
+                      const Text('Half precision, balance speed/quality'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.fp16,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.speed),
+                  title: const Text('MobileSAM INT8 (dynamic quant)'),
+                  subtitle:
+                      const Text('Smaller model, dynamic calibration'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.int8Dynamic,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.flash_on),
+                  title: const Text('MobileSAM INT8 (static quant)'),
+                  subtitle: const Text('Static calibration, fastest option'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.int8Static,
+                  ),
+                ),
+                const ListTile(
+                  title: Text('MobileSAM (pruned encoder)'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.crop),
+                  title: const Text('MobileSAM FP32 pruned 12'),
+                  subtitle: const Text('Smallest encoder (pruned 12%)'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.pruned012,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.crop),
+                  title: const Text('MobileSAM FP32 pruned 25'),
+                  subtitle: const Text('Pruned encoder (25%)'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.pruned025,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.crop),
+                  title: const Text('MobileSAM FP32 pruned 40'),
+                  subtitle: const Text('Pruned encoder (40%)'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.pruned040,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.crop),
+                  title: const Text('MobileSAM FP32 pruned 54'),
+                  subtitle: const Text('Pruned encoder (54%)'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.pruned054,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
+    if (precision != null) {
+      setState(() {
+        _segmentationPrecision = precision;
+      });
+      FirebaseAnalytics.instance.logEvent(
+        name: 'segmentation_precision_selected',
+        parameters: {
+          'model': _segmentationModelName,
+          'quantization': _segmentationQuantizationType,
+        },
+      );
+      AppLogger.log('Segmentation precision changed to $precision');
+    }
+  }
+
+  Future<void> _selectExecutionProvider() async {
+    final provider = await showModalBottomSheet<ExecutionProvider>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ListTile(
+                  title: Text('Execution environment'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.auto_mode),
+                  title: const Text('Auto (CoreML > CPU)'),
+                  subtitle: const Text('Try CoreML first, fallback to CPU'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    ExecutionProvider.auto,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.memory),
+                  title: const Text('CPU only'),
+                  subtitle: const Text('Disable hardware acceleration'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    ExecutionProvider.cpu,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.developer_board),
+                  title: const Text('CoreML only'),
+                  subtitle:
+                      const Text('Force CoreML (fallback if unsupported)'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    ExecutionProvider.coreml,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    if (provider != null) {
+      setState(() {
+        _executionProvider = provider;
+      });
+      SegmentationService.preferredExecutionProvider = provider;
+      InpaintingService.preferredExecutionProvider = provider;
+      FirebaseAnalytics.instance.logEvent(
+        name: 'execution_provider_selected',
+        parameters: {
+          'provider': _executionProviderValue,
+        },
+      );
+      AppLogger.log('Execution provider changed to $_executionProviderValue');
+    }
+  }
+
+  Future<void> _selectInpaintingModel() async {
+    final model = await showModalBottomSheet<InpaintingModel>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.memory),
+                  title: const Text('MI-GAN FP32'),
+                  subtitle: const Text('Higher precision, larger model'),
+                  onTap: () => Navigator.pop(context, InpaintingModel.fp32),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.blur_on),
+                  title: const Text('MI-GAN FP16'),
+                  subtitle: const Text(
+                      'Half precision mixed model, balance speed/quality'),
+                  onTap: () => Navigator.pop(context, InpaintingModel.fp16),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.speed),
+                  title: const Text('MI-GAN INT8 (dynamic quant)'),
+                  subtitle: const Text(
+                      'Smaller quantized model, dynamic calibration (may be slower)'),
+                  onTap: () =>
+                      Navigator.pop(context, InpaintingModel.int8Dynamic),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.flash_on),
+                  title: const Text('MI-GAN INT8 (static quant)'),
+                  subtitle:
+                      const Text('Static calibration, fastest quantized option'),
+                  onTap: () =>
+                      Navigator.pop(context, InpaintingModel.int8Static),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (model != null) {
+      setState(() {
+        _inpaintingModel = model;
+      });
+      FirebaseAnalytics.instance.logEvent(
+        name: 'inpainting_model_selected',
+        parameters: {
+          'model': _inpaintingModelName,
+          'quantization': _inpaintingQuantizationType,
+        },
+      );
+      AppLogger.log('Inpainting model changed to $model');
+    }
   }
 
   @override
@@ -1758,7 +1434,7 @@ class _InpaintingPageState extends State<InpaintingPage>
         ),
       );
     } else if (_imageFile == null) {
-      canvasChild = _buildEmptyState();
+      canvasChild = const InpaintingEmptyState();
     } else {
       canvasChild = _buildImageStack();
     }
@@ -1766,7 +1442,7 @@ class _InpaintingPageState extends State<InpaintingPage>
     return Scaffold(
       body: Stack(
         children: [
-          _buildBackground(),
+          const InpaintingBackground(),
           Positioned(
             top: -60,
             right: -40,
@@ -1795,7 +1471,12 @@ class _InpaintingPageState extends State<InpaintingPage>
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildHeader(),
+                InpaintingHeader(
+                  segmentationPrecisionLabel: _segmentationPrecisionLabel,
+                  inpaintingModelLabel: _inpaintingModelLabel,
+                  executionProviderLabel: _executionProviderLabel,
+                  isSegmentationInProgress: _isSegmentationInProgress,
+                ),
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -1831,7 +1512,28 @@ class _InpaintingPageState extends State<InpaintingPage>
           ),
         ],
       ),
-      bottomNavigationBar: _buildActionBar(),
+      bottomNavigationBar: InpaintingActionBar(
+        onPick: _pickImage,
+        onCamera: _pickImageFromCamera,
+        onInpaint: _runInpainting,
+        onSave: _imageFile == null ? null : _saveCurrentImage,
+        onSelectSegmentationModel: _selectSegmentationPrecision,
+        onSelectExecutionProvider: _selectExecutionProvider,
+        onSelectInpaintingModel: _selectInpaintingModel,
+        showHintControls:
+            _mode == InteractionMode.point && _segmentationMask != null,
+        isPositiveSelected: _pointMode == SegmentationPointMode.positive,
+        isNegativeSelected: _pointMode == SegmentationPointMode.negative,
+        isSegmentationInProgress: _isSegmentationInProgress,
+        onSelectPositive: () {
+          setState(() => _pointMode = SegmentationPointMode.positive);
+        },
+        onSelectNegative: () {
+          setState(() => _pointMode = SegmentationPointMode.negative);
+        },
+        showClear: _mode == InteractionMode.draw && _hasManualDrawing,
+        onClear: _clearManualMask,
+      ),
     );
   }
 }
