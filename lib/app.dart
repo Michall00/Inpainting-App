@@ -44,7 +44,7 @@ class MyApp extends StatelessWidget {
           scrolledUnderElevation: 0,
           centerTitle: false,
         ),
-        cardTheme: CardTheme(
+        cardTheme: CardThemeData(
           color: colorScheme.surface,
           elevation: 0,
           shape: RoundedRectangleBorder(
