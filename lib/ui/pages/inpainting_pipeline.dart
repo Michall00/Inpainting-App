@@ -1,0 +1,116 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'dart:ui';
+
+import 'package:flutter/services.dart';
+import 'package:image/image.dart' as img;
+
+import '../../services/segmentation_service.dart';
+
+class SegmentationVisuals {
+  final Uint8List maskBytes;
+  final img.Image maskImage;
+  final Uint8List overlayBytes;
+  final Float32List lowResMask;
+
+  const SegmentationVisuals({
+    required this.maskBytes,
+    required this.maskImage,
+    required this.overlayBytes,
+    required this.lowResMask,
+  });
+}
+
+class InpaintingPipeline {
+  const InpaintingPipeline();
+
+  static Future<SegmentationResult> callSegmentation({
+    required File imageFile,
+    required Rect? bbox,
+    required List<Offset> positivePoints,
+    required List<Offset> negativePoints,
+    required Float32List? lowResMask,
+    required String encoderAsset,
+    required String decoderAsset,
+  }) async {
+    final encoderData = await rootBundle.load(encoderAsset);
+    final decoderData = await rootBundle.load(decoderAsset);
+
+    return SegmentationService.segmentWithPoints(
+      imageFile: imageFile,
+      bboxPx: bbox,
+      positivePoints: List<Offset>.from(positivePoints),
+      negativePoints: List<Offset>.from(negativePoints),
+      lowResMaskInput: lowResMask,
+      encoderData: encoderData,
+      decoderData: decoderData,
+    );
+  }
+
+  static Future<SegmentationVisuals> applySegmentationResult({
+    required File imageFile,
+    required SegmentationResult result,
+    required void Function(SegmentationVisuals visuals) onApply,
+  }) async {
+    final visuals = await prepareSegmentationVisuals(
+      imageFile: imageFile,
+      result: result,
+    );
+    onApply(visuals);
+    return visuals;
+  }
+
+  static Future<SegmentationVisuals> prepareSegmentationVisuals({
+    required File imageFile,
+    required SegmentationResult result,
+  }) async {
+    final imageBytes = await imageFile.readAsBytes();
+    final baseImage = img.decodeImage(imageBytes)!;
+    final decodedMask = img.decodeImage(result.maskBytes)!;
+    final overlay = _composeOverlay(baseImage, decodedMask);
+    return SegmentationVisuals(
+      maskBytes: result.maskBytes,
+      maskImage: decodedMask,
+      overlayBytes: Uint8List.fromList(img.encodePng(overlay)),
+      lowResMask: result.lowResMask,
+    );
+  }
+
+  static img.Image _composeOverlay(img.Image baseImage, img.Image mask) {
+    final overlay = img.Image.from(baseImage);
+    final width = overlay.width;
+    final height = overlay.height;
+    const r = 72;
+    const g = 167;
+    const b = 255;
+    const edgeAlpha = 160;
+    const midAlpha = 110;
+    const fillAlpha = 70;
+
+    bool hasOutsideNeighbor(int x, int y, int radius) {
+      for (int dy = -radius; dy <= radius; dy++) {
+        final ny = y + dy;
+        if (ny < 0 || ny >= height) continue;
+        for (int dx = -radius; dx <= radius; dx++) {
+          final nx = x + dx;
+          if (nx < 0 || nx >= width) continue;
+          if (mask.getPixel(nx, ny).r != 0) {
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        if (mask.getPixel(x, y).r != 0) continue;
+        final alpha = hasOutsideNeighbor(x, y, 1)
+            ? edgeAlpha
+            : (hasOutsideNeighbor(x, y, 2) ? midAlpha : fillAlpha);
+        overlay.setPixelRgba(x, y, r, g, b, alpha);
+      }
+    }
+    return overlay;
+  }
+}

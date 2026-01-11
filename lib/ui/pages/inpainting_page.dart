@@ -20,6 +20,7 @@ import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:vector_math/vector_math_64.dart' show Matrix4;
 import 'inpainting_session_state.dart';
+import 'inpainting_pipeline.dart';
 import 'model_info.dart';
 import 'inpainting_types.dart';
 
@@ -350,83 +351,32 @@ class _InpaintingPageState extends State<InpaintingPage>
     required List<Offset> negativePoints,
     required Float32List? lowResMask,
   }) async {
-    final encoderData =
-        await rootBundle.load(_segmentationPrecision.encoderAsset);
-    final decoderData =
-        await rootBundle.load(_segmentationPrecision.decoderAsset);
-
-    return SegmentationService.segmentWithPoints(
+    return InpaintingPipeline.callSegmentation(
       imageFile: _session.imageFile!,
-      bboxPx: bbox,
-      positivePoints: List<Offset>.from(positivePoints),
-      negativePoints: List<Offset>.from(negativePoints),
-      lowResMaskInput: lowResMask,
-      encoderData: encoderData,
-      decoderData: decoderData,
-    );
-  }
-
-  Future<_SegmentationVisuals> _prepareSegmentationVisuals(
-      SegmentationResult result) async {
-    final imageBytes = await _session.imageFile!.readAsBytes();
-    final baseImage = img.decodeImage(imageBytes)!;
-    final decodedMask = img.decodeImage(result.maskBytes)!;
-    final overlay = _composeOverlay(baseImage, decodedMask);
-    return _SegmentationVisuals(
-      maskBytes: result.maskBytes,
-      maskImage: decodedMask,
-      overlayBytes: Uint8List.fromList(img.encodePng(overlay)),
-      lowResMask: result.lowResMask,
+      bbox: bbox,
+      positivePoints: positivePoints,
+      negativePoints: negativePoints,
+      lowResMask: lowResMask,
+      encoderAsset: _segmentationPrecision.encoderAsset,
+      decoderAsset: _segmentationPrecision.decoderAsset,
     );
   }
 
   Future<void> _applySegmentationResult(SegmentationResult result) async {
-    final visuals = await _prepareSegmentationVisuals(result);
-    if (!mounted) return;
-    setState(() {
-      _session.segmentationMask = visuals.maskBytes;
-      _session.maskImage = visuals.maskImage;
-      _session.previewMaskBytes = visuals.overlayBytes;
-      _session.lowResMaskInput = visuals.lowResMask;
-    });
-  }
-
-  img.Image _composeOverlay(img.Image baseImage, img.Image mask) {
-    final overlay = img.Image.from(baseImage);
-    final width = overlay.width;
-    final height = overlay.height;
-    const r = 72;
-    const g = 167;
-    const b = 255;
-    const edgeAlpha = 160;
-    const midAlpha = 110;
-    const fillAlpha = 70;
-
-    bool _hasOutsideNeighbor(int x, int y, int radius) {
-      for (int dy = -radius; dy <= radius; dy++) {
-        final ny = y + dy;
-        if (ny < 0 || ny >= height) continue;
-        for (int dx = -radius; dx <= radius; dx++) {
-          final nx = x + dx;
-          if (nx < 0 || nx >= width) continue;
-          if (mask.getPixel(nx, ny).r != 0) {
-            return true;
-          }
-        }
-      }
-      return false;
-    }
-
-    for (int y = 0; y < height; y++) {
-      for (int x = 0; x < width; x++) {
-        if (mask.getPixel(x, y).r != 0) continue;
-        final alpha = _hasOutsideNeighbor(x, y, 1)
-            ? edgeAlpha
-            : (_hasOutsideNeighbor(x, y, 2) ? midAlpha : fillAlpha);
-        overlay.setPixelRgba(x, y, r, g, b, alpha);
-      }
-    }
-    return overlay;
+    if (_session.imageFile == null) return;
+    await InpaintingPipeline.applySegmentationResult(
+      imageFile: _session.imageFile!,
+      result: result,
+      onApply: (visuals) {
+        if (!mounted) return;
+        setState(() {
+          _session.segmentationMask = visuals.maskBytes;
+          _session.maskImage = visuals.maskImage;
+          _session.previewMaskBytes = visuals.overlayBytes;
+          _session.lowResMaskInput = visuals.lowResMask;
+        });
+      },
+    );
   }
 
   Future<void> _refineSegmentation(Offset point) async {
@@ -1277,18 +1227,4 @@ class _InpaintingPageState extends State<InpaintingPage>
       ),
     );
   }
-}
-
-class _SegmentationVisuals {
-  final Uint8List maskBytes;
-  final img.Image maskImage;
-  final Uint8List overlayBytes;
-  final Float32List lowResMask;
-
-  const _SegmentationVisuals({
-    required this.maskBytes,
-    required this.maskImage,
-    required this.overlayBytes,
-    required this.lowResMask,
-  });
 }
