@@ -22,12 +22,12 @@ class MaskPainter extends CustomPainter {
         (0.18 + 0.12 * math.cos(t * math.pi * 2)).clamp(0.08, 0.35).toDouble();
 
     final glowPaint = Paint()
-      ..color = Colors.redAccent.withOpacity(glowAlpha)
+      ..color = const Color.fromARGB(255, 72, 167, 255).withOpacity(glowAlpha)
       ..strokeCap = StrokeCap.round
       ..strokeWidth = strokeWidth * 1.8;
 
     final corePaint = Paint()
-      ..color = Colors.redAccent.withOpacity(pulseAlpha)
+      ..color = const Color.fromARGB(255, 72, 167, 255).withOpacity(pulseAlpha)
       ..strokeCap = StrokeCap.round
       ..strokeWidth = strokeWidth * 0.9;
 

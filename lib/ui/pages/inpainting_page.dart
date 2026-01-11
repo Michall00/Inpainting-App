@@ -571,12 +571,37 @@ class _InpaintingPageState extends State<InpaintingPage>
 
   img.Image _composeOverlay(img.Image baseImage, img.Image mask) {
     final overlay = img.Image.from(baseImage);
-    for (int y = 0; y < overlay.height; y++) {
-      for (int x = 0; x < overlay.width; x++) {
-        final value = mask.getPixel(x, y).r;
-        if (value == 0) {
-          overlay.setPixelRgba(x, y, 0, 255, 0, 120);
+    final width = overlay.width;
+    final height = overlay.height;
+    const r = 72;
+    const g = 167;
+    const b = 255;
+    const edgeAlpha = 160;
+    const midAlpha = 110;
+    const fillAlpha = 70;
+
+    bool _hasOutsideNeighbor(int x, int y, int radius) {
+      for (int dy = -radius; dy <= radius; dy++) {
+        final ny = y + dy;
+        if (ny < 0 || ny >= height) continue;
+        for (int dx = -radius; dx <= radius; dx++) {
+          final nx = x + dx;
+          if (nx < 0 || nx >= width) continue;
+          if (mask.getPixel(nx, ny).r != 0) {
+            return true;
+          }
         }
+      }
+      return false;
+    }
+
+    for (int y = 0; y < height; y++) {
+      for (int x = 0; x < width; x++) {
+        if (mask.getPixel(x, y).r != 0) continue;
+        final alpha = _hasOutsideNeighbor(x, y, 1)
+            ? edgeAlpha
+            : (_hasOutsideNeighbor(x, y, 2) ? midAlpha : fillAlpha);
+        overlay.setPixelRgba(x, y, r, g, b, alpha);
       }
     }
     return overlay;
