@@ -7,27 +7,15 @@ import 'package:image/image.dart' as img;
 import 'inpainting_types.dart';
 
 class InpaintingSessionState {
-  File? imageFile;
-  int? imageWidth;
-  int? imageHeight;
+  final ImageState image = ImageState();
+  final MaskState mask = MaskState();
+  final InteractionState interaction = InteractionState();
+  final SegmentationState segmentation = SegmentationState();
+  final CanvasState canvas = CanvasState();
+  final OutputState output = OutputState();
 
-  img.Image? maskImage;
-  Uint8List? previewMaskBytes;
-  Uint8List? segmentationMask;
-
-  final List<Offset> points = [];
-  InteractionMode mode = InteractionMode.point;
-  Offset? lastTapImagePoint;
-  Size? canvasSize;
-
-  Float32List? lowResMaskInput;
-  Rect? segmentationImageRect;
-  final List<Offset> positivePoints = [];
-  final List<Offset> negativePoints = [];
-  SegmentationPointMode pointMode = SegmentationPointMode.positive;
-
-  Uint8List? outputBytes;
-  bool get hasManualDrawing => points.any((offset) => offset.isFinite);
+  bool get hasManualDrawing =>
+      interaction.points.any((offset) => offset.isFinite);
 
   void resetForNewImage({
     required File tempFile,
@@ -35,21 +23,87 @@ class InpaintingSessionState {
     required int height,
     required img.Image blankMask,
   }) {
-    imageFile = tempFile;
-    imageWidth = width;
-    imageHeight = height;
-    outputBytes = null;
-    previewMaskBytes = null;
-    segmentationMask = null;
-    maskImage = blankMask;
+    image.reset(
+      file: tempFile,
+      width: width,
+      height: height,
+    );
+    mask.reset(blankMask);
+    interaction.reset();
+    segmentation.reset();
+    canvas.reset();
+    output.reset();
+  }
+}
+
+class ImageState {
+  File? file;
+  int? width;
+  int? height;
+
+  void reset({
+    required File file,
+    required int width,
+    required int height,
+  }) {
+    this.file = file;
+    this.width = width;
+    this.height = height;
+  }
+}
+
+class MaskState {
+  img.Image? image;
+  Uint8List? previewBytes;
+  Uint8List? segmentationBytes;
+
+  void reset(img.Image blankMask) {
+    image = blankMask;
+    previewBytes = null;
+    segmentationBytes = null;
+  }
+}
+
+class InteractionState {
+  final List<Offset> points = [];
+  InteractionMode mode = InteractionMode.point;
+  Offset? lastTapImagePoint;
+  final List<Offset> positivePoints = [];
+  final List<Offset> negativePoints = [];
+  SegmentationPointMode pointMode = SegmentationPointMode.positive;
+
+  void reset() {
     points.clear();
     lastTapImagePoint = null;
-    canvasSize = null;
     mode = InteractionMode.point;
-    lowResMaskInput = null;
-    segmentationImageRect = null;
     positivePoints.clear();
     negativePoints.clear();
     pointMode = SegmentationPointMode.positive;
+  }
+}
+
+class SegmentationState {
+  Float32List? lowResMaskInput;
+  Rect? segmentationImageRect;
+
+  void reset() {
+    lowResMaskInput = null;
+    segmentationImageRect = null;
+  }
+}
+
+class CanvasState {
+  Size? size;
+
+  void reset() {
+    size = null;
+  }
+}
+
+class OutputState {
+  Uint8List? bytes;
+
+  void reset() {
+    bytes = null;
   }
 }

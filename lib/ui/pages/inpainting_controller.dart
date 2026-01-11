@@ -69,7 +69,7 @@ class InpaintingController {
     required Float32List? lowResMask,
   }) async {
     return InpaintingPipeline.callSegmentation(
-      imageFile: session.imageFile!,
+      imageFile: session.image.file!,
       bbox: bbox,
       positivePoints: positivePoints,
       negativePoints: negativePoints,
@@ -80,15 +80,15 @@ class InpaintingController {
   }
 
   Future<void> applySegmentationResult(SegmentationResult result) async {
-    if (session.imageFile == null) return;
+    if (session.image.file == null) return;
     await InpaintingPipeline.applySegmentationResult(
-      imageFile: session.imageFile!,
+      imageFile: session.image.file!,
       result: result,
       onApply: (visuals) {
-        session.segmentationMask = visuals.maskBytes;
-        session.maskImage = visuals.maskImage;
-        session.previewMaskBytes = visuals.overlayBytes;
-        session.lowResMaskInput = visuals.lowResMask;
+        session.mask.segmentationBytes = visuals.maskBytes;
+        session.mask.image = visuals.maskImage;
+        session.mask.previewBytes = visuals.overlayBytes;
+        session.segmentation.lowResMaskInput = visuals.lowResMask;
       },
     );
   }
@@ -100,7 +100,7 @@ class InpaintingController {
     required Float32List lowResMask,
   }) async {
     return InpaintingPipeline.refineSegmentation(
-      imageFile: session.imageFile!,
+      imageFile: session.image.file!,
       segmentationImageRect: segmentationImageRect,
       positivePoints: positivePoints,
       negativePoints: negativePoints,
