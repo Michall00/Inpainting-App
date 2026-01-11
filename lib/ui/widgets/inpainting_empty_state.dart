@@ -34,7 +34,7 @@ class InpaintingEmptyState extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            'Pick an image to begin masking and inpainting.',
+            'Pick an image to begin editing.',
             style: textTheme.bodyMedium?.copyWith(
               color: colorScheme.onSurface.withOpacity(0.65),
             ),

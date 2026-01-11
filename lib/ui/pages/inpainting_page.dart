@@ -19,6 +19,8 @@ import '../../utils/image_utils.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:vector_math/vector_math_64.dart' show Matrix4;
+import 'inpainting_session_state.dart';
+import 'inpainting_types.dart';
 
 class InpaintingPage extends StatefulWidget {
   const InpaintingPage({super.key});
@@ -29,27 +31,11 @@ class InpaintingPage extends StatefulWidget {
 
 class _InpaintingPageState extends State<InpaintingPage>
     with SingleTickerProviderStateMixin {
-  File? _imageFile;
-  img.Image? _maskImage;
-  int? _imageWidth;
-  int? _imageHeight;
-  Uint8List? _previewMaskBytes;
-  Uint8List? _segmentationMask;
-  Uint8List? _outputBytes;
-  final List<Offset> _points = [];
+  final InpaintingSessionState _session = InpaintingSessionState();
   final GlobalKey _imageKey = GlobalKey();
   final GlobalKey _interactiveViewerKey = GlobalKey();
   final TransformationController _transformationController =
       TransformationController();
-  InteractionMode _mode = InteractionMode.point;
-  Offset? _lastTapImagePoint;
-  Rect? _bbox;
-  Size? _canvasSize;
-  Float32List? _lowResMaskInput;
-  Rect? _segmentationImageRect;
-  final List<Offset> _positivePoints = [];
-  final List<Offset> _negativePoints = [];
-  SegmentationPointMode _pointMode = SegmentationPointMode.positive;
   bool _isSegmentationInProgress = false;
   SegmentationPrecision _segmentationPrecision = SegmentationPrecision.fp32;
   InpaintingModel _inpaintingModel = InpaintingModel.fp32;
@@ -61,7 +47,7 @@ class _InpaintingPageState extends State<InpaintingPage>
   DateTime? _tapDownTime;
 
   static const double _baseBrushSceneWidth = 20.0;
-  bool get _hasManualDrawing => _points.any((offset) => offset.isFinite);
+  bool get _hasManualDrawing => _session.hasManualDrawing;
 
   String get _segmentationModelName {
     switch (_segmentationPrecision) {
@@ -315,24 +301,12 @@ class _InpaintingPageState extends State<InpaintingPage>
 
     _transformationController.value = Matrix4.identity();
     setState(() {
-      _imageFile = tempFile;
-      _imageWidth = resized.width;
-      _imageHeight = resized.height;
-
-      _outputBytes = null;
-      _previewMaskBytes = null;
-      _segmentationMask = null;
-      _maskImage = blank;
-      _points.clear();
-      _lastTapImagePoint = null;
-      _bbox = null;
-      _canvasSize = null;
-      _mode = InteractionMode.point;
-      _lowResMaskInput = null;
-      _segmentationImageRect = null;
-      _positivePoints.clear();
-      _negativePoints.clear();
-      _pointMode = SegmentationPointMode.positive;
+      _session.resetForNewImage(
+        tempFile: tempFile,
+        width: resized.width,
+        height: resized.height,
+        blankMask: blank,
+      );
       _isSegmentationInProgress = false;
       _isInpaintingInProgress = false;
     });
@@ -340,8 +314,8 @@ class _InpaintingPageState extends State<InpaintingPage>
   }
 
   Future<void> _runSegmentationFromClick(Offset point) async {
-    if (_imageFile == null || _isSegmentationInProgress) {
-      if (_imageFile == null) {
+    if (_session.imageFile == null || _isSegmentationInProgress) {
+      if (_session.imageFile == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text(".")),
         );
@@ -408,15 +382,15 @@ class _InpaintingPageState extends State<InpaintingPage>
       await _applySegmentationResult(result);
       if (!mounted) return;
       setState(() {
-        _positivePoints
+        _session.positivePoints
           ..clear()
           ..addAll(newPositive);
-        _negativePoints.clear();
-        _segmentationImageRect = null;
-        _points.clear();
-        _lastTapImagePoint = null;
-        _bbox = null;
-        _pointMode = SegmentationPointMode.positive;
+        _session.negativePoints.clear();
+        _session.segmentationImageRect = null;
+        _session.points.clear();
+        _session.lastTapImagePoint = null;
+        _session.bbox = null;
+        _session.pointMode = SegmentationPointMode.positive;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -441,20 +415,20 @@ class _InpaintingPageState extends State<InpaintingPage>
   }
 
   void _clearManualMask() {
-    if (_imageWidth == null || _imageHeight == null) return;
+    if (_session.imageWidth == null || _session.imageHeight == null) return;
     setState(() {
-      _points.clear();
-      _bbox = null;
-      if (_segmentationMask != null) {
-        _maskImage = img.decodeImage(_segmentationMask!)!;
+      _session.points.clear();
+      _session.bbox = null;
+      if (_session.segmentationMask != null) {
+        _session.maskImage = img.decodeImage(_session.segmentationMask!)!;
       } else {
-        _maskImage = _createBlankMaskImage(_imageWidth!, _imageHeight!);
+        _session.maskImage = _createBlankMaskImage(_session.imageWidth!, _session.imageHeight!);
       }
     });
   }
 
   Future<void> _runSegmentationFromBbox(Rect bbox) async {
-    if (_imageFile == null || _isSegmentationInProgress) return;
+    if (_session.imageFile == null || _isSegmentationInProgress) return;
     AppLogger.log('Segmentation from bbox requested: $bbox');
 
     _isSegmentationInProgress = true;
@@ -503,12 +477,12 @@ class _InpaintingPageState extends State<InpaintingPage>
       await _applySegmentationResult(result);
       if (!mounted) return;
       setState(() {
-        _positivePoints.clear();
-        _negativePoints.clear();
-        _segmentationImageRect = bbox;
-        _points.clear();
-        _bbox = null;
-        _pointMode = SegmentationPointMode.positive;
+        _session.positivePoints.clear();
+        _session.negativePoints.clear();
+        _session.segmentationImageRect = bbox;
+        _session.points.clear();
+        _session.bbox = null;
+        _session.pointMode = SegmentationPointMode.positive;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -536,7 +510,7 @@ class _InpaintingPageState extends State<InpaintingPage>
     final decoderData = await rootBundle.load(_segmentationDecoderAsset);
 
     return SegmentationService.segmentWithPoints(
-      imageFile: _imageFile!,
+      imageFile: _session.imageFile!,
       bboxPx: bbox,
       positivePoints: List<Offset>.from(positivePoints),
       negativePoints: List<Offset>.from(negativePoints),
@@ -548,7 +522,7 @@ class _InpaintingPageState extends State<InpaintingPage>
 
   Future<_SegmentationVisuals> _prepareSegmentationVisuals(
       SegmentationResult result) async {
-    final imageBytes = await _imageFile!.readAsBytes();
+    final imageBytes = await _session.imageFile!.readAsBytes();
     final baseImage = img.decodeImage(imageBytes)!;
     final decodedMask = img.decodeImage(result.maskBytes)!;
     final overlay = _composeOverlay(baseImage, decodedMask);
@@ -564,10 +538,10 @@ class _InpaintingPageState extends State<InpaintingPage>
     final visuals = await _prepareSegmentationVisuals(result);
     if (!mounted) return;
     setState(() {
-      _segmentationMask = visuals.maskBytes;
-      _maskImage = visuals.maskImage;
-      _previewMaskBytes = visuals.overlayBytes;
-      _lowResMaskInput = visuals.lowResMask;
+      _session.segmentationMask = visuals.maskBytes;
+      _session.maskImage = visuals.maskImage;
+      _session.previewMaskBytes = visuals.overlayBytes;
+      _session.lowResMaskInput = visuals.lowResMask;
     });
   }
 
@@ -610,8 +584,8 @@ class _InpaintingPageState extends State<InpaintingPage>
   }
 
   Future<void> _refineSegmentation(Offset point) async {
-    if (_imageFile == null ||
-        _segmentationMask == null ||
+    if (_session.imageFile == null ||
+        _session.segmentationMask == null ||
         _isSegmentationInProgress) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -621,7 +595,7 @@ class _InpaintingPageState extends State<InpaintingPage>
       );
       return;
     }
-    final lowRes = _lowResMaskInput;
+    final lowRes = _session.lowResMaskInput;
     if (lowRes == null) {
       AppLogger.log(
           'Refinement skipped because low-res mask is unavailable for point $point');
@@ -634,7 +608,7 @@ class _InpaintingPageState extends State<InpaintingPage>
       return;
     }
 
-    final isPositive = _pointMode == SegmentationPointMode.positive;
+    final isPositive = _session.pointMode == SegmentationPointMode.positive;
     AppLogger.log(
         'Refining segmentation with ${isPositive ? 'positive' : 'negative'} point: $point');
 
@@ -645,10 +619,10 @@ class _InpaintingPageState extends State<InpaintingPage>
       ),
     );
 
-    final previousPositive = List<Offset>.from(_positivePoints);
-    final previousNegative = List<Offset>.from(_negativePoints);
-    final updatedPositive = List<Offset>.from(_positivePoints);
-    final updatedNegative = List<Offset>.from(_negativePoints);
+    final previousPositive = List<Offset>.from(_session.positivePoints);
+    final previousNegative = List<Offset>.from(_session.negativePoints);
+    final updatedPositive = List<Offset>.from(_session.positivePoints);
+    final updatedNegative = List<Offset>.from(_session.negativePoints);
 
     bool added = false;
     if (isPositive) {
@@ -678,10 +652,10 @@ class _InpaintingPageState extends State<InpaintingPage>
     if (mounted) {
       setState(() {
         _isSegmentationInProgress = true;
-        _positivePoints
+        _session.positivePoints
           ..clear()
           ..addAll(updatedPositive);
-        _negativePoints
+        _session.negativePoints
           ..clear()
           ..addAll(updatedNegative);
       });
@@ -698,7 +672,7 @@ class _InpaintingPageState extends State<InpaintingPage>
 
     try {
       final result = await _callSegmentation(
-        bbox: _segmentationImageRect,
+        bbox: _session.segmentationImageRect,
         positivePoints: updatedPositive,
         negativePoints: updatedNegative,
         lowResMask: lowRes,
@@ -706,7 +680,7 @@ class _InpaintingPageState extends State<InpaintingPage>
       await _applySegmentationResult(result);
       if (!mounted) return;
       setState(() {
-        _lastTapImagePoint = null;
+        _session.lastTapImagePoint = null;
         _isSegmentationInProgress = false;
       });
       _updateMaskPulse();
@@ -727,10 +701,10 @@ class _InpaintingPageState extends State<InpaintingPage>
       );
       if (!mounted) return;
       setState(() {
-        _positivePoints
+        _session.positivePoints
           ..clear()
           ..addAll(previousPositive);
-        _negativePoints
+        _session.negativePoints
           ..clear()
           ..addAll(previousNegative);
         _isSegmentationInProgress = false;
@@ -745,7 +719,7 @@ class _InpaintingPageState extends State<InpaintingPage>
   Offset? _globalToScene(Offset globalPosition) {
     final renderBox =
         _interactiveViewerKey.currentContext?.findRenderObject() as RenderBox?;
-    final canvasSize = _canvasSize;
+    final canvasSize = _session.canvasSize;
     if (renderBox == null || canvasSize == null) {
       return null;
     }
@@ -772,17 +746,17 @@ class _InpaintingPageState extends State<InpaintingPage>
     double drawH,
     double brushSceneWidth,
   ) {
-    if (_maskImage == null) return;
+    if (_session.maskImage == null) return;
     final clamped = Offset(
       scenePoint.dx.clamp(0.0, drawW),
       scenePoint.dy.clamp(0.0, drawH),
     );
-    final widthScale = _maskImage!.width / drawW;
-    final heightScale = _maskImage!.height / drawH;
+    final widthScale = _session.maskImage!.width / drawW;
+    final heightScale = _session.maskImage!.height / drawH;
     final centerX =
-        (clamped.dx * widthScale).round().clamp(0, _maskImage!.width - 1);
+        (clamped.dx * widthScale).round().clamp(0, _session.maskImage!.width - 1);
     final centerY =
-        (clamped.dy * heightScale).round().clamp(0, _maskImage!.height - 1);
+        (clamped.dy * heightScale).round().clamp(0, _session.maskImage!.height - 1);
 
     final brushRadiusScene = math.max(1.0, brushSceneWidth / 2.0);
     final radiusX = math.max(1, (brushRadiusScene * widthScale).round());
@@ -793,22 +767,22 @@ class _InpaintingPageState extends State<InpaintingPage>
         final normX = dx / radiusX;
         final normY = dy / radiusY;
         if ((normX * normX + normY * normY) > 1.0) continue;
-        final nx = (centerX + dx).clamp(0, _maskImage!.width - 1);
-        final ny = (centerY + dy).clamp(0, _maskImage!.height - 1);
-        _maskImage!.setPixelRgba(nx, ny, 0, 0, 0, 255);
+        final nx = (centerX + dx).clamp(0, _session.maskImage!.width - 1);
+        final ny = (centerY + dy).clamp(0, _session.maskImage!.height - 1);
+        _session.maskImage!.setPixelRgba(nx, ny, 0, 0, 0, 255);
       }
     }
 
-    _points.add(clamped);
-    final newBox = bboxFromPoints(_points);
-    _bbox = newBox.isEmpty ? null : newBox;
+    _session.points.add(clamped);
+    final newBox = bboxFromPoints(_session.points);
+    _session.bbox = newBox.isEmpty ? null : newBox;
   }
 
   Future<void> _onSegmentPressed() async {
     if (_isSegmentationInProgress) {
       return;
     }
-    if (_imageFile == null) {
+    if (_session.imageFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("No image selected.")),
       );
@@ -816,11 +790,11 @@ class _InpaintingPageState extends State<InpaintingPage>
     }
 
     AppLogger.log(
-      'Segment button pressed. mode=$_mode, lastPoint=$_lastTapImagePoint, bbox=$_bbox',
+      'Segment button pressed. mode=$_session.mode, lastPoint=$_session.lastTapImagePoint, bbox=$_session.bbox',
     );
 
-    if (_mode == InteractionMode.point) {
-      if (_lastTapImagePoint == null) {
+    if (_session.mode == InteractionMode.point) {
+      if (_session.lastTapImagePoint == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
               content: Text(
@@ -828,7 +802,7 @@ class _InpaintingPageState extends State<InpaintingPage>
         );
         return;
       }
-      final point = _lastTapImagePoint!;
+      final point = _session.lastTapImagePoint!;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text("Segmentation point: $point")),
       );
@@ -836,15 +810,15 @@ class _InpaintingPageState extends State<InpaintingPage>
       return;
     }
 
-    Rect? box = _bbox;
+    Rect? box = _session.bbox;
     if (box == null) {
-      if (_points.isEmpty) {
+      if (_session.points.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("First draw the mask")),
         );
         return;
       }
-      box = bboxFromPoints(_points);
+      box = bboxFromPoints(_session.points);
       if (box.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text("Failed to determine bbox")),
@@ -853,12 +827,12 @@ class _InpaintingPageState extends State<InpaintingPage>
       }
     }
 
-    final canvasSize = _canvasSize;
+    final canvasSize = _session.canvasSize;
     if (canvasSize == null ||
         canvasSize.width == 0 ||
         canvasSize.height == 0 ||
-        _imageWidth == null ||
-        _imageHeight == null) {
+        _session.imageWidth == null ||
+        _session.imageHeight == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Canvas size unavailable for bbox.")),
       );
@@ -872,25 +846,25 @@ class _InpaintingPageState extends State<InpaintingPage>
       return;
     }
 
-    final scaleX = _imageWidth! / canvasSize.width;
-    final scaleY = _imageHeight! / canvasSize.height;
+    final scaleX = _session.imageWidth! / canvasSize.width;
+    final scaleY = _session.imageHeight! / canvasSize.height;
     final imageRect = Rect.fromLTRB(
       ((box.left.clamp(0.0, canvasSize.width)) * scaleX)
-          .clamp(0.0, _imageWidth!.toDouble())
+          .clamp(0.0, _session.imageWidth!.toDouble())
           .toDouble(),
       ((box.top.clamp(0.0, canvasSize.height)) * scaleY)
-          .clamp(0.0, _imageHeight!.toDouble())
+          .clamp(0.0, _session.imageHeight!.toDouble())
           .toDouble(),
       ((box.right.clamp(0.0, canvasSize.width)) * scaleX)
-          .clamp(0.0, _imageWidth!.toDouble())
+          .clamp(0.0, _session.imageWidth!.toDouble())
           .toDouble(),
       ((box.bottom.clamp(0.0, canvasSize.height)) * scaleY)
-          .clamp(0.0, _imageHeight!.toDouble())
+          .clamp(0.0, _session.imageHeight!.toDouble())
           .toDouble(),
     );
 
     setState(() {
-      _bbox = box;
+      _session.bbox = box;
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
@@ -900,7 +874,7 @@ class _InpaintingPageState extends State<InpaintingPage>
   }
 
   Future<void> _runInpainting() async {
-    if (_imageFile == null || _maskImage == null) return;
+    if (_session.imageFile == null || _session.maskImage == null) return;
 
     _isInpaintingInProgress = true;
     _updateMaskPulse();
@@ -910,8 +884,8 @@ class _InpaintingPageState extends State<InpaintingPage>
       FirebaseAnalytics.instance.logEvent(
         name: 'inpainting_started',
         parameters: {
-          'width': _imageWidth!,
-          'height': _imageHeight!,
+          'width': _session.imageWidth!,
+          'height': _session.imageHeight!,
           'model': _inpaintingModelName,
           'quantization': _inpaintingQuantizationType,
           'environment': InpaintingService.lastExecutionProvider,
@@ -920,16 +894,16 @@ class _InpaintingPageState extends State<InpaintingPage>
         },
       );
 
-      final bytes = await _imageFile!.readAsBytes();
+      final bytes = await _session.imageFile!.readAsBytes();
       final originalImage = img.decodeImage(bytes)!;
 
-      if (_segmentationMask != null) {
-        _maskImage = img.decodeImage(_segmentationMask!)!;
+      if (_session.segmentationMask != null) {
+        _session.maskImage = img.decodeImage(_session.segmentationMask!)!;
       }
 
       final modelData = await rootBundle.load(_inpaintingModelAsset);
 
-      final dilated = dilateMask(_maskImage!, radius: 20);
+      final dilated = dilateMask(_session.maskImage!, radius: 20);
 
       final output = await InpaintingService.runInpainting(
         original: originalImage,
@@ -1002,7 +976,7 @@ class _InpaintingPageState extends State<InpaintingPage>
     final elapsedMs = DateTime.now().difference(downTime).inMilliseconds;
     final moveDistance = (details.globalPosition - downPos).distance;
     if (moveDistance > tapMoveThreshold) return;
-    if (_imageWidth == null || _imageHeight == null) {
+    if (_session.imageWidth == null || _session.imageHeight == null) {
       return;
     }
     if (elapsedMs > tapMsThreshold) {
@@ -1010,24 +984,24 @@ class _InpaintingPageState extends State<InpaintingPage>
     }
 
     final scenePoint = _globalToScene(details.globalPosition);
-    final size = _canvasSize;
+    final size = _session.canvasSize;
     if (scenePoint == null || size == null) return;
-    final px = (scenePoint.dx * (_imageWidth! / size.width))
-        .clamp(0.0, _imageWidth!.toDouble());
-    final py = (scenePoint.dy * (_imageHeight! / size.height))
-        .clamp(0.0, _imageHeight!.toDouble());
+    final px = (scenePoint.dx * (_session.imageWidth! / size.width))
+        .clamp(0.0, _session.imageWidth!.toDouble());
+    final py = (scenePoint.dy * (_session.imageHeight! / size.height))
+        .clamp(0.0, _session.imageHeight!.toDouble());
     final imagePoint = Offset(px, py);
 
     AppLogger.log(
         'Tap on image (scene=$scenePoint → image=$imagePoint) drawSize=($drawW,$drawH)');
 
-    if (_segmentationMask != null) {
+    if (_session.segmentationMask != null) {
       _refineSegmentation(imagePoint);
     } else {
       setState(() {
-        _mode = InteractionMode.point;
-        _lastTapImagePoint = imagePoint;
-        _bbox = null;
+        _session.mode = InteractionMode.point;
+        _session.lastTapImagePoint = imagePoint;
+        _session.bbox = null;
       });
       if (!_isSegmentationInProgress) {
         await _onSegmentPressed();
@@ -1049,8 +1023,8 @@ class _InpaintingPageState extends State<InpaintingPage>
     final scenePoint = _globalToScene(details.globalPosition);
     if (scenePoint == null) return;
     setState(() {
-      _mode = InteractionMode.draw;
-      _lastTapImagePoint = null;
+      _session.mode = InteractionMode.draw;
+      _session.lastTapImagePoint = null;
       _addStrokePoint(
         scenePoint,
         drawW,
@@ -1079,8 +1053,8 @@ class _InpaintingPageState extends State<InpaintingPage>
   }
 
   Future<void> _handlePanEnd() async {
-    setState(() => _points.add(Offset.infinite));
-    final hasStroke = _points.any((point) => point.isFinite);
+    setState(() => _session.points.add(Offset.infinite));
+    final hasStroke = _session.points.any((point) => point.isFinite);
     if (hasStroke && !_isSegmentationInProgress) {
       await _onSegmentPressed();
     }
@@ -1094,8 +1068,8 @@ class _InpaintingPageState extends State<InpaintingPage>
   }
 
   Future<void> _saveCurrentImage() async {
-    if (_imageFile == null) return;
-    final bytes = await _imageFile!.readAsBytes();
+    if (_session.imageFile == null) return;
+    final bytes = await _session.imageFile!.readAsBytes();
     await _saveImageToGallery(bytes);
   }
 
@@ -1335,32 +1309,32 @@ class _InpaintingPageState extends State<InpaintingPage>
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final Widget canvasChild;
-    if (_outputBytes != null) {
+    if (_session.outputBytes != null) {
       canvasChild = Center(
         child: Image.memory(
-          _outputBytes!,
-          width: _imageWidth?.toDouble(),
-          height: _imageHeight?.toDouble(),
+          _session.outputBytes!,
+          width: _session.imageWidth?.toDouble(),
+          height: _session.imageHeight?.toDouble(),
           fit: BoxFit.contain,
         ),
       );
-    } else if (_imageFile == null) {
+    } else if (_session.imageFile == null) {
       canvasChild = const InpaintingEmptyState();
     } else {
       canvasChild = InpaintingImageStack(
-        imageFile: _imageFile,
-        previewMaskBytes: _previewMaskBytes,
-        imageWidth: _imageWidth,
-        imageHeight: _imageHeight,
-        points: _points,
-        positivePoints: _positivePoints,
-        negativePoints: _negativePoints,
-        lastTapImagePoint: _lastTapImagePoint,
+        imageFile: _session.imageFile,
+        previewMaskBytes: _session.previewMaskBytes,
+        imageWidth: _session.imageWidth,
+        imageHeight: _session.imageHeight,
+        points: _session.points,
+        positivePoints: _session.positivePoints,
+        negativePoints: _session.negativePoints,
+        lastTapImagePoint: _session.lastTapImagePoint,
         maskPulse: _maskPulse,
         imageKey: _imageKey,
         interactiveViewerKey: _interactiveViewerKey,
         transformationController: _transformationController,
-        onCanvasSize: (size) => _canvasSize = size,
+        onCanvasSize: (size) => _session.canvasSize = size,
         brushWidthForDraw: _currentBrushSceneWidth,
         onTapDown: _handleTapDown,
         onTapCancel: _handleTapCancel,
@@ -1448,44 +1422,27 @@ class _InpaintingPageState extends State<InpaintingPage>
         onPick: _pickImage,
         onCamera: _pickImageFromCamera,
         onInpaint: _runInpainting,
-        onSave: _imageFile == null ? null : _saveCurrentImage,
+        onSave: _session.imageFile == null ? null : _saveCurrentImage,
         onSelectSegmentationModel: _selectSegmentationPrecision,
         onSelectExecutionProvider: _selectExecutionProvider,
         onSelectInpaintingModel: _selectInpaintingModel,
         showHintControls:
-            _mode == InteractionMode.point && _segmentationMask != null,
-        isPositiveSelected: _pointMode == SegmentationPointMode.positive,
-        isNegativeSelected: _pointMode == SegmentationPointMode.negative,
+            _session.mode == InteractionMode.point && _session.segmentationMask != null,
+        isPositiveSelected: _session.pointMode == SegmentationPointMode.positive,
+        isNegativeSelected: _session.pointMode == SegmentationPointMode.negative,
         isSegmentationInProgress: _isSegmentationInProgress,
         onSelectPositive: () {
-          setState(() => _pointMode = SegmentationPointMode.positive);
+          setState(() => _session.pointMode = SegmentationPointMode.positive);
         },
         onSelectNegative: () {
-          setState(() => _pointMode = SegmentationPointMode.negative);
+          setState(() => _session.pointMode = SegmentationPointMode.negative);
         },
-        showClear: _mode == InteractionMode.draw && _hasManualDrawing,
+        showClear: _session.mode == InteractionMode.draw && _hasManualDrawing,
         onClear: _clearManualMask,
       ),
     );
   }
 }
-
-enum InteractionMode { draw, point }
-
-enum SegmentationPointMode { positive, negative }
-
-enum SegmentationPrecision {
-  fp32,
-  fp16,
-  int8Dynamic,
-  int8Static,
-  pruned012,
-  pruned025,
-  pruned040,
-  pruned054,
-}
-
-enum InpaintingModel { fp32, fp16, int8Dynamic, int8Static }
 
 class _SegmentationVisuals {
   final Uint8List maskBytes;
