@@ -417,23 +417,14 @@ class _InpaintingPageState extends State<InpaintingPage>
 
     final previousPositive = List<Offset>.from(_session.positivePoints);
     final previousNegative = List<Offset>.from(_session.negativePoints);
-    final updatedPositive = List<Offset>.from(_session.positivePoints);
-    final updatedNegative = List<Offset>.from(_session.negativePoints);
+    final update = InpaintingPipeline.updateRefinementPoints(
+      isPositive: isPositive,
+      point: point,
+      positivePoints: _session.positivePoints,
+      negativePoints: _session.negativePoints,
+    );
 
-    bool added = false;
-    if (isPositive) {
-      if (!updatedPositive.contains(point)) {
-        updatedPositive.add(point);
-        added = true;
-      }
-    } else {
-      if (!updatedNegative.contains(point)) {
-        updatedNegative.add(point);
-        added = true;
-      }
-    }
-
-    if (!added) {
+    if (!update.added) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -450,10 +441,10 @@ class _InpaintingPageState extends State<InpaintingPage>
         _isSegmentationInProgress = true;
         _session.positivePoints
           ..clear()
-          ..addAll(updatedPositive);
+          ..addAll(update.positivePoints);
         _session.negativePoints
           ..clear()
-          ..addAll(updatedNegative);
+          ..addAll(update.negativePoints);
       });
       _updateMaskPulse();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -469,8 +460,8 @@ class _InpaintingPageState extends State<InpaintingPage>
     try {
       final result = await _callSegmentation(
         bbox: _session.segmentationImageRect,
-        positivePoints: updatedPositive,
-        negativePoints: updatedNegative,
+        positivePoints: update.positivePoints,
+        negativePoints: update.negativePoints,
         lowResMask: lowRes,
       );
       await _applySegmentationResult(result);

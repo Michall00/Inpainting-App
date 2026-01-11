@@ -21,8 +21,49 @@ class SegmentationVisuals {
   });
 }
 
+class SegmentationRefinementUpdate {
+  final List<Offset> positivePoints;
+  final List<Offset> negativePoints;
+  final bool added;
+
+  const SegmentationRefinementUpdate({
+    required this.positivePoints,
+    required this.negativePoints,
+    required this.added,
+  });
+}
+
 class InpaintingPipeline {
   const InpaintingPipeline();
+
+  static SegmentationRefinementUpdate updateRefinementPoints({
+    required bool isPositive,
+    required Offset point,
+    required List<Offset> positivePoints,
+    required List<Offset> negativePoints,
+  }) {
+    final updatedPositive = List<Offset>.from(positivePoints);
+    final updatedNegative = List<Offset>.from(negativePoints);
+
+    bool added = false;
+    if (isPositive) {
+      if (!updatedPositive.contains(point)) {
+        updatedPositive.add(point);
+        added = true;
+      }
+    } else {
+      if (!updatedNegative.contains(point)) {
+        updatedNegative.add(point);
+        added = true;
+      }
+    }
+
+    return SegmentationRefinementUpdate(
+      positivePoints: updatedPositive,
+      negativePoints: updatedNegative,
+      added: added,
+    );
+  }
 
   static Future<SegmentationResult> callSegmentation({
     required File imageFile,
