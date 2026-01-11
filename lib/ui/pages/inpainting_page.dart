@@ -1225,12 +1225,6 @@ class _InpaintingPageState extends State<InpaintingPage>
             runSpacing: 8,
             children: [
               _buildStatusPill(
-                icon: _mode == InteractionMode.draw
-                    ? Icons.brush
-                    : Icons.touch_app,
-                label: 'Mode: $_modeLabel',
-              ),
-              _buildStatusPill(
                 icon: Icons.tune,
                 label: _segmentationPrecisionLabel,
               ),
