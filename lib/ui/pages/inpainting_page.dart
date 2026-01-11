@@ -5,11 +5,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
-import '../widgets/mask_painter.dart';
 import '../widgets/inpainting_action_bar.dart';
 import '../widgets/inpainting_background.dart';
 import '../widgets/inpainting_empty_state.dart';
 import '../widgets/inpainting_header.dart';
+import '../widgets/inpainting_image_stack.dart';
 import '../../services/image_service.dart';
 import '../../services/inpainting_service.dart';
 import '../../services/segmentation_service.dart';
@@ -977,202 +977,113 @@ class _InpaintingPageState extends State<InpaintingPage>
     }
   }
 
-  Widget _buildImageStack() {
-    if (_imageFile == null && _previewMaskBytes == null) {
-      return const Center(child: Text("No image selected"));
+  void _handleTapDown(TapDownDetails details) {
+    _tapDownGlobal = details.globalPosition;
+    _tapDownTime = DateTime.now();
+  }
+
+  void _handleTapCancel() {
+    _tapDownGlobal = null;
+    _tapDownTime = null;
+  }
+
+  Future<void> _handleTapUp(
+    TapUpDetails details,
+    double drawW,
+    double drawH,
+  ) async {
+    const tapMsThreshold = 180;
+    const tapMoveThreshold = 6.0;
+    final downPos = _tapDownGlobal;
+    final downTime = _tapDownTime;
+    _tapDownGlobal = null;
+    _tapDownTime = null;
+    if (downPos == null || downTime == null) return;
+    final elapsedMs = DateTime.now().difference(downTime).inMilliseconds;
+    final moveDistance = (details.globalPosition - downPos).distance;
+    if (moveDistance > tapMoveThreshold) return;
+    if (_imageWidth == null || _imageHeight == null) {
+      return;
+    }
+    if (elapsedMs > tapMsThreshold) {
+      AppLogger.log('Long press detected: ${elapsedMs}ms');
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final maxW = constraints.maxWidth;
-        final maxH = constraints.maxHeight;
+    final scenePoint = _globalToScene(details.globalPosition);
+    final size = _canvasSize;
+    if (scenePoint == null || size == null) return;
+    final px = (scenePoint.dx * (_imageWidth! / size.width))
+        .clamp(0.0, _imageWidth!.toDouble());
+    final py = (scenePoint.dy * (_imageHeight! / size.height))
+        .clamp(0.0, _imageHeight!.toDouble());
+    final imagePoint = Offset(px, py);
 
-        final imgW = _imageWidth?.toDouble() ?? 256;
-        final imgH = _imageHeight?.toDouble() ?? 256;
+    AppLogger.log(
+        'Tap on image (scene=$scenePoint → image=$imagePoint) drawSize=($drawW,$drawH)');
 
-        final scale = (maxW / imgW < maxH / imgH) ? maxW / imgW : maxH / imgH;
-        final drawW = imgW * scale;
-        final drawH = imgH * scale;
-        _canvasSize = Size(drawW, drawH);
+    if (_segmentationMask != null) {
+      _refineSegmentation(imagePoint);
+    } else {
+      setState(() {
+        _mode = InteractionMode.point;
+        _lastTapImagePoint = imagePoint;
+        _bbox = null;
+      });
+      if (!_isSegmentationInProgress) {
+        await _onSegmentPressed();
+      }
+    }
+  }
 
-        return Center(
-          child: SizedBox(
-            width: drawW,
-            height: drawH,
-            child: InteractiveViewer(
-              key: _interactiveViewerKey,
-              transformationController: _transformationController,
-              minScale: 1.0,
-              maxScale: 5.0,
-              panEnabled: false,
-              clipBehavior: Clip.none,
-              child: ValueListenableBuilder<Matrix4>(
-                valueListenable: _transformationController,
-                builder: (context, value, _) {
-                  final brushSceneWidth = _currentBrushSceneWidth(drawW);
-                  return Stack(
-                    children: [
-                      Positioned.fill(
-                        child: Image(
-                          key: _imageKey,
-                          image: _previewMaskBytes != null
-                              ? MemoryImage(_previewMaskBytes!)
-                              : FileImage(_imageFile!) as ImageProvider,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                      Positioned.fill(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTapDown: (details) {
-                            _tapDownGlobal = details.globalPosition;
-                            _tapDownTime = DateTime.now();
-                          },
-                          onTapCancel: () {
-                            _tapDownGlobal = null;
-                            _tapDownTime = null;
-                          },
-                          onTapUp: (details) async {
-                            const tapMsThreshold = 180;
-                            const tapMoveThreshold = 6.0;
-                            final downPos = _tapDownGlobal;
-                            final downTime = _tapDownTime;
-                            _tapDownGlobal = null;
-                            _tapDownTime = null;
-                            if (downPos == null || downTime == null) return;
-                            final elapsedMs =
-                                DateTime.now().difference(downTime).inMilliseconds;
-                            final moveDistance =
-                                (details.globalPosition - downPos).distance;
-                            if (moveDistance > tapMoveThreshold) return;
-                            if (_imageWidth == null || _imageHeight == null) {
-                              return;
-                            }
-                            if (elapsedMs > tapMsThreshold) {
-                              AppLogger.log(
-                                  'Long press detected: ${elapsedMs}ms');
-                            }
-
-                            final scenePoint =
-                                _globalToScene(details.globalPosition);
-                            final size = _canvasSize;
-                            if (scenePoint == null || size == null) return;
-                            final px = (scenePoint.dx *
-                                    (_imageWidth! / size.width))
-                                .clamp(0.0, _imageWidth!.toDouble());
-                            final py = (scenePoint.dy *
-                                    (_imageHeight! / size.height))
-                                .clamp(0.0, _imageHeight!.toDouble());
-                            final imagePoint = Offset(px, py);
-
-                            AppLogger.log(
-                                'Tap on image (scene=$scenePoint → image=$imagePoint) drawSize=($drawW,$drawH)');
-
-                            if (_segmentationMask != null) {
-                              _refineSegmentation(imagePoint);
-                            } else {
-                              setState(() {
-                                _mode = InteractionMode.point;
-                                _lastTapImagePoint = imagePoint;
-                                _bbox = null;
-                              });
-                              if (!_isSegmentationInProgress) {
-                                await _onSegmentPressed();
-                              }
-                            }
-                          },
-                          onPanStart: (details) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text("Clicked on image (draw)."),
-                              ),
-                            );
-                            final scenePoint =
-                                _globalToScene(details.globalPosition);
-                            if (scenePoint == null) return;
-                            setState(() {
-                              _mode = InteractionMode.draw;
-                              _lastTapImagePoint = null;
-                              _addStrokePoint(
-                                scenePoint,
-                                drawW,
-                                drawH,
-                                brushSceneWidth,
-                              );
-                            });
-                          },
-                          onPanUpdate: (details) {
-                            final scenePoint =
-                                _globalToScene(details.globalPosition);
-                            if (scenePoint == null) return;
-                            setState(() {
-                              _addStrokePoint(
-                                scenePoint,
-                                drawW,
-                                drawH,
-                                brushSceneWidth,
-                              );
-                            });
-                          },
-                          onPanEnd: (_) async {
-                            setState(() => _points.add(Offset.infinite));
-                            final hasStroke =
-                                _points.any((point) => point.isFinite);
-                            if (hasStroke && !_isSegmentationInProgress) {
-                              await _onSegmentPressed();
-                            }
-                          },
-                          child: CustomPaint(
-                            painter: MaskPainter(
-                              _points,
-                              strokeWidth: brushSceneWidth,
-                              pulse: _maskPulse,
-                            ),
-                            size: Size(drawW, drawH),
-                          ),
-                        ),
-                      ),
-                      if ((_positivePoints.isNotEmpty ||
-                              _negativePoints.isNotEmpty) &&
-                          _imageWidth != null &&
-                          _imageHeight != null)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            ignoring: true,
-                            child: CustomPaint(
-                              painter: SegmentationHintsPainter(
-                                positives: _positivePoints,
-                                negatives: _negativePoints,
-                                imageSize: Size(_imageWidth!.toDouble(),
-                                    _imageHeight!.toDouble()),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (_lastTapImagePoint != null)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            ignoring: true,
-                            child: CustomPaint(
-                              painter: SquarePointPainter(
-                                point: _lastTapImagePoint!,
-                                imageSize: Size(_imageWidth!.toDouble(),
-                                    _imageHeight!.toDouble()),
-                                size: 16.0,
-                                color: Colors.blueAccent,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
-            ),
-          ),
-        );
-      },
+  void _handlePanStart(
+    DragStartDetails details,
+    double drawW,
+    double drawH,
+    double brushSceneWidth,
+  ) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Clicked on image (draw)."),
+      ),
     );
+    final scenePoint = _globalToScene(details.globalPosition);
+    if (scenePoint == null) return;
+    setState(() {
+      _mode = InteractionMode.draw;
+      _lastTapImagePoint = null;
+      _addStrokePoint(
+        scenePoint,
+        drawW,
+        drawH,
+        brushSceneWidth,
+      );
+    });
+  }
+
+  void _handlePanUpdate(
+    DragUpdateDetails details,
+    double drawW,
+    double drawH,
+    double brushSceneWidth,
+  ) {
+    final scenePoint = _globalToScene(details.globalPosition);
+    if (scenePoint == null) return;
+    setState(() {
+      _addStrokePoint(
+        scenePoint,
+        drawW,
+        drawH,
+        brushSceneWidth,
+      );
+    });
+  }
+
+  Future<void> _handlePanEnd() async {
+    setState(() => _points.add(Offset.infinite));
+    final hasStroke = _points.any((point) => point.isFinite);
+    if (hasStroke && !_isSegmentationInProgress) {
+      await _onSegmentPressed();
+    }
   }
 
   @override
@@ -1436,7 +1347,28 @@ class _InpaintingPageState extends State<InpaintingPage>
     } else if (_imageFile == null) {
       canvasChild = const InpaintingEmptyState();
     } else {
-      canvasChild = _buildImageStack();
+      canvasChild = InpaintingImageStack(
+        imageFile: _imageFile,
+        previewMaskBytes: _previewMaskBytes,
+        imageWidth: _imageWidth,
+        imageHeight: _imageHeight,
+        points: _points,
+        positivePoints: _positivePoints,
+        negativePoints: _negativePoints,
+        lastTapImagePoint: _lastTapImagePoint,
+        maskPulse: _maskPulse,
+        imageKey: _imageKey,
+        interactiveViewerKey: _interactiveViewerKey,
+        transformationController: _transformationController,
+        onCanvasSize: (size) => _canvasSize = size,
+        brushWidthForDraw: _currentBrushSceneWidth,
+        onTapDown: _handleTapDown,
+        onTapCancel: _handleTapCancel,
+        onTapUp: _handleTapUp,
+        onPanStart: _handlePanStart,
+        onPanUpdate: _handlePanUpdate,
+        onPanEnd: _handlePanEnd,
+      );
     }
 
     return Scaffold(
