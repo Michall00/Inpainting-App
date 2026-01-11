@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import '../widgets/inpainting_action_bar.dart';
@@ -11,8 +10,6 @@ import '../widgets/inpainting_empty_state.dart';
 import '../widgets/inpainting_header.dart';
 import '../widgets/inpainting_image_stack.dart';
 import '../../services/image_service.dart';
-import '../../services/inpainting_service.dart';
-import '../../services/segmentation_service.dart';
 import '../../services/execution_provider.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/image_utils.dart';
@@ -212,7 +209,7 @@ class _InpaintingPageState extends State<InpaintingPage>
           'decoder_inference_ms': result.decoderInferenceMs,
           'model': _segmentationPrecision.modelName,
           'quantization': _segmentationPrecision.quantizationType,
-          'environment': SegmentationService.lastExecutionProvider,
+          'environment': InpaintingPipeline.lastSegmentationExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -223,7 +220,7 @@ class _InpaintingPageState extends State<InpaintingPage>
         'decoder=${result.decoderInferenceMs}ms '
         'model=${_segmentationPrecision.modelName} '
         'quantization=${_segmentationPrecision.quantizationType} '
-        'env=${SegmentationService.lastExecutionProvider}',
+        'env=${InpaintingPipeline.lastSegmentationExecutionProvider}',
       );
 
       await _applySegmentationResult(result);
@@ -311,7 +308,7 @@ class _InpaintingPageState extends State<InpaintingPage>
           'decoder_inference_ms': result.decoderInferenceMs,
           'model': _segmentationPrecision.modelName,
           'quantization': _segmentationPrecision.quantizationType,
-          'environment': SegmentationService.lastExecutionProvider,
+          'environment': InpaintingPipeline.lastSegmentationExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -659,7 +656,7 @@ class _InpaintingPageState extends State<InpaintingPage>
           'height': _session.imageHeight!,
           'model': _inpaintingModel.modelName,
           'quantization': _inpaintingModel.quantizationType,
-          'environment': InpaintingService.lastExecutionProvider,
+        'environment': InpaintingPipeline.lastInpaintingExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -672,14 +669,12 @@ class _InpaintingPageState extends State<InpaintingPage>
         _session.maskImage = img.decodeImage(_session.segmentationMask!)!;
       }
 
-      final modelData = await rootBundle.load(_inpaintingModel.asset);
-
       final dilated = dilateMask(_session.maskImage!, radius: 20);
 
-      final output = await InpaintingService.runInpainting(
+      final output = await InpaintingPipeline.runInpainting(
         original: originalImage,
         mask: dilated,
-        modelData: modelData,
+        modelAsset: _inpaintingModel.asset,
       );
 
       FirebaseAnalytics.instance.logEvent(
@@ -688,7 +683,7 @@ class _InpaintingPageState extends State<InpaintingPage>
           'model': _inpaintingModel.modelName,
           'quantization': _inpaintingModel.quantizationType,
           'inference_ms': output.inferenceDurationMs,
-          'environment': InpaintingService.lastExecutionProvider,
+        'environment': InpaintingPipeline.lastInpaintingExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -709,7 +704,7 @@ class _InpaintingPageState extends State<InpaintingPage>
           'inpainting_inference_ms': output.inferenceDurationMs,
           'model': _inpaintingModel.modelName,
           'quantization': _inpaintingModel.quantizationType,
-          'environment': InpaintingService.lastExecutionProvider,
+        'environment': InpaintingPipeline.lastInpaintingExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -1002,8 +997,7 @@ class _InpaintingPageState extends State<InpaintingPage>
       setState(() {
         _executionProvider = provider;
       });
-      SegmentationService.preferredExecutionProvider = provider;
-      InpaintingService.preferredExecutionProvider = provider;
+      InpaintingPipeline.setPreferredExecutionProvider(provider);
       FirebaseAnalytics.instance.logEvent(
         name: 'execution_provider_selected',
         parameters: {

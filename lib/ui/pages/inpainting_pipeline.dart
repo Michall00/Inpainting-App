@@ -5,6 +5,8 @@ import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 
+import '../../services/execution_provider.dart';
+import '../../services/inpainting_service.dart';
 import '../../services/segmentation_service.dart';
 
 class SegmentationVisuals {
@@ -45,6 +47,17 @@ class RefinementStatus {
 
 class InpaintingPipeline {
   const InpaintingPipeline();
+
+  static String get lastSegmentationExecutionProvider =>
+      SegmentationService.lastExecutionProvider;
+
+  static String get lastInpaintingExecutionProvider =>
+      InpaintingService.lastExecutionProvider;
+
+  static void setPreferredExecutionProvider(ExecutionProvider provider) {
+    SegmentationService.preferredExecutionProvider = provider;
+    InpaintingService.preferredExecutionProvider = provider;
+  }
 
   static SegmentationRefinementUpdate updateRefinementPoints({
     required bool isPositive,
@@ -122,6 +135,19 @@ class InpaintingPipeline {
       lowResMask: lowResMask,
       encoderAsset: encoderAsset,
       decoderAsset: decoderAsset,
+    );
+  }
+
+  static Future<InpaintingResult> runInpainting({
+    required img.Image original,
+    required img.Image mask,
+    required String modelAsset,
+  }) async {
+    final modelData = await rootBundle.load(modelAsset);
+    return InpaintingService.runInpainting(
+      original: original,
+      mask: mask,
+      modelData: modelData,
     );
   }
 
