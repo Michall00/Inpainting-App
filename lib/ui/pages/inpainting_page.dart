@@ -53,6 +53,8 @@ class _InpaintingPageState extends State<InpaintingPage>
   bool _isInpaintingInProgress = false;
   late final AnimationController _maskPulseController;
   late final Animation<double> _maskPulse;
+  Offset? _tapDownGlobal;
+  DateTime? _tapDownTime;
 
   static const double _baseBrushSceneWidth = 20.0;
   bool get _hasManualDrawing => _points.any((offset) => offset.isFinite);
@@ -1022,97 +1024,104 @@ class _InpaintingPageState extends State<InpaintingPage>
                       Positioned.fill(
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTapDown: _mode == InteractionMode.point
-                              ? (details) async {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content:
-                                          Text("Clicked on image (point)."),
-                                    ),
-                                  );
-                                  if (_imageWidth == null ||
-                                      _imageHeight == null) return;
-                                  final scenePoint =
-                                      _globalToScene(details.globalPosition);
-                                  final size = _canvasSize;
-                                  if (scenePoint == null || size == null)
-                                    return;
-                                  final px = (scenePoint.dx *
-                                          (_imageWidth! / size.width))
-                                      .clamp(0.0, _imageWidth!.toDouble());
-                                  final py = (scenePoint.dy *
-                                          (_imageHeight! / size.height))
-                                      .clamp(0.0, _imageHeight!.toDouble());
-                                  final imagePoint = Offset(px, py);
+                          onTapDown: (details) {
+                            _tapDownGlobal = details.globalPosition;
+                            _tapDownTime = DateTime.now();
+                          },
+                          onTapCancel: () {
+                            _tapDownGlobal = null;
+                            _tapDownTime = null;
+                          },
+                          onTapUp: (details) async {
+                            const tapMsThreshold = 180;
+                            const tapMoveThreshold = 6.0;
+                            final downPos = _tapDownGlobal;
+                            final downTime = _tapDownTime;
+                            _tapDownGlobal = null;
+                            _tapDownTime = null;
+                            if (downPos == null || downTime == null) return;
+                            final elapsedMs =
+                                DateTime.now().difference(downTime).inMilliseconds;
+                            final moveDistance =
+                                (details.globalPosition - downPos).distance;
+                            if (moveDistance > tapMoveThreshold) return;
+                            if (_imageWidth == null || _imageHeight == null) {
+                              return;
+                            }
+                            if (elapsedMs > tapMsThreshold) {
+                              AppLogger.log(
+                                  'Long press detected: ${elapsedMs}ms');
+                            }
 
-                                  AppLogger.log(
-                                      'Tap on image (scene=$scenePoint → image=$imagePoint) drawSize=($drawW,$drawH)');
+                            final scenePoint =
+                                _globalToScene(details.globalPosition);
+                            final size = _canvasSize;
+                            if (scenePoint == null || size == null) return;
+                            final px = (scenePoint.dx *
+                                    (_imageWidth! / size.width))
+                                .clamp(0.0, _imageWidth!.toDouble());
+                            final py = (scenePoint.dy *
+                                    (_imageHeight! / size.height))
+                                .clamp(0.0, _imageHeight!.toDouble());
+                            final imagePoint = Offset(px, py);
 
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                          "Clicked on image at point: ${imagePoint.dx.toStringAsFixed(1)}, ${imagePoint.dy.toStringAsFixed(1)}"),
-                                    ),
-                                  );
+                            AppLogger.log(
+                                'Tap on image (scene=$scenePoint → image=$imagePoint) drawSize=($drawW,$drawH)');
 
-                                  if (_segmentationMask != null) {
-                                    _refineSegmentation(imagePoint);
-                                  } else {
-                                    setState(() {
-                                      _lastTapImagePoint = imagePoint;
-                                      _bbox = null;
-                                    });
-                                    if (!_isSegmentationInProgress) {
-                                      await _onSegmentPressed();
-                                    }
-                                  }
-                                }
-                              : null,
-                          onPanStart: _mode == InteractionMode.draw
-                              ? (details) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text("Clicked on image (draw)."),
-                                    ),
-                                  );
-                                  final scenePoint =
-                                      _globalToScene(details.globalPosition);
-                                  if (scenePoint == null) return;
-                                  setState(() {
-                                    _addStrokePoint(
-                                      scenePoint,
-                                      drawW,
-                                      drawH,
-                                      brushSceneWidth,
-                                    );
-                                  });
-                                }
-                              : null,
-                          onPanUpdate: _mode == InteractionMode.draw
-                              ? (details) {
-                                  final scenePoint =
-                                      _globalToScene(details.globalPosition);
-                                  if (scenePoint == null) return;
-                                  setState(() {
-                                    _addStrokePoint(
-                                      scenePoint,
-                                      drawW,
-                                      drawH,
-                                      brushSceneWidth,
-                                    );
-                                  });
-                                }
-                              : null,
-                          onPanEnd: _mode == InteractionMode.draw
-                              ? (_) async {
-                                  setState(() => _points.add(Offset.infinite));
-                                  final hasStroke =
-                                      _points.any((point) => point.isFinite);
-                                  if (hasStroke && !_isSegmentationInProgress) {
-                                    await _onSegmentPressed();
-                                  }
-                                }
-                              : null,
+                            if (_segmentationMask != null) {
+                              _refineSegmentation(imagePoint);
+                            } else {
+                              setState(() {
+                                _mode = InteractionMode.point;
+                                _lastTapImagePoint = imagePoint;
+                                _bbox = null;
+                              });
+                              if (!_isSegmentationInProgress) {
+                                await _onSegmentPressed();
+                              }
+                            }
+                          },
+                          onPanStart: (details) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text("Clicked on image (draw)."),
+                              ),
+                            );
+                            final scenePoint =
+                                _globalToScene(details.globalPosition);
+                            if (scenePoint == null) return;
+                            setState(() {
+                              _mode = InteractionMode.draw;
+                              _lastTapImagePoint = null;
+                              _addStrokePoint(
+                                scenePoint,
+                                drawW,
+                                drawH,
+                                brushSceneWidth,
+                              );
+                            });
+                          },
+                          onPanUpdate: (details) {
+                            final scenePoint =
+                                _globalToScene(details.globalPosition);
+                            if (scenePoint == null) return;
+                            setState(() {
+                              _addStrokePoint(
+                                scenePoint,
+                                drawW,
+                                drawH,
+                                brushSceneWidth,
+                              );
+                            });
+                          },
+                          onPanEnd: (_) async {
+                            setState(() => _points.add(Offset.infinite));
+                            final hasStroke =
+                                _points.any((point) => point.isFinite);
+                            if (hasStroke && !_isSegmentationInProgress) {
+                              await _onSegmentPressed();
+                            }
+                          },
                           child: CustomPaint(
                             painter: MaskPainter(
                               _points,
