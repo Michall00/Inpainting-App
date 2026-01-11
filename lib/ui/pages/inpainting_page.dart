@@ -389,7 +389,6 @@ class _InpaintingPageState extends State<InpaintingPage>
         _session.segmentationImageRect = null;
         _session.points.clear();
         _session.lastTapImagePoint = null;
-        _session.bbox = null;
         _session.pointMode = SegmentationPointMode.positive;
       });
     } catch (error, stackTrace) {
@@ -418,7 +417,6 @@ class _InpaintingPageState extends State<InpaintingPage>
     if (_session.imageWidth == null || _session.imageHeight == null) return;
     setState(() {
       _session.points.clear();
-      _session.bbox = null;
       if (_session.segmentationMask != null) {
         _session.maskImage = img.decodeImage(_session.segmentationMask!)!;
       } else {
@@ -481,7 +479,6 @@ class _InpaintingPageState extends State<InpaintingPage>
         _session.negativePoints.clear();
         _session.segmentationImageRect = bbox;
         _session.points.clear();
-        _session.bbox = null;
         _session.pointMode = SegmentationPointMode.positive;
       });
     } catch (error, stackTrace) {
@@ -774,8 +771,6 @@ class _InpaintingPageState extends State<InpaintingPage>
     }
 
     _session.points.add(clamped);
-    final newBox = bboxFromPoints(_session.points);
-    _session.bbox = newBox.isEmpty ? null : newBox;
   }
 
   Future<void> _onSegmentPressed() async {
@@ -790,7 +785,7 @@ class _InpaintingPageState extends State<InpaintingPage>
     }
 
     AppLogger.log(
-      'Segment button pressed. mode=$_session.mode, lastPoint=$_session.lastTapImagePoint, bbox=$_session.bbox',
+      'Segment button pressed. mode=$_session.mode, lastPoint=$_session.lastTapImagePoint',
     );
 
     if (_session.mode == InteractionMode.point) {
@@ -810,21 +805,18 @@ class _InpaintingPageState extends State<InpaintingPage>
       return;
     }
 
-    Rect? box = _session.bbox;
-    if (box == null) {
-      if (_session.points.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("First draw the mask")),
-        );
-        return;
-      }
-      box = bboxFromPoints(_session.points);
-      if (box.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to determine bbox")),
-        );
-        return;
-      }
+    if (_session.points.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("First draw the mask")),
+      );
+      return;
+    }
+    final box = bboxFromPoints(_session.points);
+    if (box.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Failed to determine bbox")),
+      );
+      return;
     }
 
     final canvasSize = _session.canvasSize;
@@ -862,10 +854,6 @@ class _InpaintingPageState extends State<InpaintingPage>
           .clamp(0.0, _session.imageHeight!.toDouble())
           .toDouble(),
     );
-
-    setState(() {
-      _session.bbox = box;
-    });
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text("Segmentation from bbox: $box")),
@@ -1001,7 +989,6 @@ class _InpaintingPageState extends State<InpaintingPage>
       setState(() {
         _session.mode = InteractionMode.point;
         _session.lastTapImagePoint = imagePoint;
-        _session.bbox = null;
       });
       if (!_isSegmentationInProgress) {
         await _onSegmentPressed();

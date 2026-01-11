@@ -18,7 +18,6 @@ class InpaintingSessionState {
   final List<Offset> points = [];
   InteractionMode mode = InteractionMode.point;
   Offset? lastTapImagePoint;
-  Rect? bbox;
   Size? canvasSize;
 
   Float32List? lowResMaskInput;
@@ -45,7 +44,6 @@ class InpaintingSessionState {
     maskImage = blankMask;
     points.clear();
     lastTapImagePoint = null;
-    bbox = null;
     canvasSize = null;
     mode = InteractionMode.point;
     lowResMaskInput = null;
