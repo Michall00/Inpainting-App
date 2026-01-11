@@ -12,9 +12,6 @@ class InpaintingImageStack extends StatelessWidget {
   final int? imageWidth;
   final int? imageHeight;
   final List<Offset> points;
-  final List<Offset> positivePoints;
-  final List<Offset> negativePoints;
-  final Offset? lastTapImagePoint;
   final Animation<double> maskPulse;
   final GlobalKey imageKey;
   final GlobalKey interactiveViewerKey;
@@ -46,9 +43,6 @@ class InpaintingImageStack extends StatelessWidget {
     required this.imageWidth,
     required this.imageHeight,
     required this.points,
-    required this.positivePoints,
-    required this.negativePoints,
-    required this.lastTapImagePoint,
     required this.maskPulse,
     required this.imageKey,
     required this.interactiveViewerKey,
@@ -125,42 +119,6 @@ class InpaintingImageStack extends StatelessWidget {
                           ),
                         ),
                       ),
-                      if ((positivePoints.isNotEmpty ||
-                              negativePoints.isNotEmpty) &&
-                          imageWidth != null &&
-                          imageHeight != null)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            ignoring: true,
-                            child: CustomPaint(
-                              painter: SegmentationHintsPainter(
-                                positives: positivePoints,
-                                negatives: negativePoints,
-                                imageSize: Size(
-                                  imageWidth!.toDouble(),
-                                  imageHeight!.toDouble(),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (lastTapImagePoint != null)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            ignoring: true,
-                            child: CustomPaint(
-                              painter: SquarePointPainter(
-                                point: lastTapImagePoint!,
-                                imageSize: Size(
-                                  imageWidth!.toDouble(),
-                                  imageHeight!.toDouble(),
-                                ),
-                                size: 16.0,
-                                color: Colors.blueAccent,
-                              ),
-                            ),
-                          ),
-                        ),
                     ],
                   );
                 },
