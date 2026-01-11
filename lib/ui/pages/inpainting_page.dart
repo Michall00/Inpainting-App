@@ -391,19 +391,6 @@ class _InpaintingPageState extends State<InpaintingPage>
       );
       return;
     }
-    final lowRes = _session.lowResMaskInput;
-    if (lowRes == null) {
-      AppLogger.log(
-          'Refinement skipped because low-res mask is unavailable for point $point');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Refinement skipped because low-res mask is unavailable for point $point'),
-        ),
-      );
-      return;
-    }
-
     final isPositive = _session.pointMode == SegmentationPointMode.positive;
     AppLogger.log(
         'Refining segmentation with ${isPositive ? 'positive' : 'negative'} point: $point');
@@ -417,24 +404,25 @@ class _InpaintingPageState extends State<InpaintingPage>
 
     final previousPositive = List<Offset>.from(_session.positivePoints);
     final previousNegative = List<Offset>.from(_session.negativePoints);
-    final update = InpaintingPipeline.updateRefinementPoints(
+    final refinement = InpaintingPipeline.validateRefinement(
+      lowResMask: _session.lowResMaskInput,
       isPositive: isPositive,
       point: point,
       positivePoints: _session.positivePoints,
       negativePoints: _session.negativePoints,
     );
 
-    if (!update.added) {
+    if (refinement.message != null) {
+      AppLogger.log(refinement.message!);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'This ${isPositive ? 'positive' : 'negative'} point is already added.',
-          ),
+          content: Text(refinement.message!),
         ),
       );
       return;
     }
+    final update = refinement.update!;
 
     if (mounted) {
       setState(() {
@@ -458,11 +446,14 @@ class _InpaintingPageState extends State<InpaintingPage>
     }
 
     try {
-      final result = await _callSegmentation(
-        bbox: _session.segmentationImageRect,
+      final result = await InpaintingPipeline.refineSegmentation(
+        imageFile: _session.imageFile!,
+        segmentationImageRect: _session.segmentationImageRect,
         positivePoints: update.positivePoints,
         negativePoints: update.negativePoints,
-        lowResMask: lowRes,
+        lowResMask: _session.lowResMaskInput!,
+        encoderAsset: _segmentationPrecision.encoderAsset,
+        decoderAsset: _segmentationPrecision.decoderAsset,
       );
       await _applySegmentationResult(result);
       if (!mounted) return;

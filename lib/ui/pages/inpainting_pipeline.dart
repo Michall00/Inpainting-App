@@ -33,6 +33,16 @@ class SegmentationRefinementUpdate {
   });
 }
 
+class RefinementStatus {
+  final SegmentationRefinementUpdate? update;
+  final String? message;
+
+  const RefinementStatus({
+    this.update,
+    this.message,
+  });
+}
+
 class InpaintingPipeline {
   const InpaintingPipeline();
 
@@ -62,6 +72,56 @@ class InpaintingPipeline {
       positivePoints: updatedPositive,
       negativePoints: updatedNegative,
       added: added,
+    );
+  }
+
+  static RefinementStatus validateRefinement({
+    required Float32List? lowResMask,
+    required bool isPositive,
+    required Offset point,
+    required List<Offset> positivePoints,
+    required List<Offset> negativePoints,
+  }) {
+    if (lowResMask == null) {
+      return const RefinementStatus(
+        message:
+            'Refinement skipped because low-res mask is unavailable for this point.',
+      );
+    }
+
+    final update = updateRefinementPoints(
+      isPositive: isPositive,
+      point: point,
+      positivePoints: positivePoints,
+      negativePoints: negativePoints,
+    );
+
+    if (!update.added) {
+      return RefinementStatus(
+        message: 'This ${isPositive ? 'positive' : 'negative'} point is already added.',
+      );
+    }
+
+    return RefinementStatus(update: update);
+  }
+
+  static Future<SegmentationResult> refineSegmentation({
+    required File imageFile,
+    required Rect? segmentationImageRect,
+    required List<Offset> positivePoints,
+    required List<Offset> negativePoints,
+    required Float32List lowResMask,
+    required String encoderAsset,
+    required String decoderAsset,
+  }) async {
+    return callSegmentation(
+      imageFile: imageFile,
+      bbox: segmentationImageRect,
+      positivePoints: positivePoints,
+      negativePoints: negativePoints,
+      lowResMask: lowResMask,
+      encoderAsset: encoderAsset,
+      decoderAsset: decoderAsset,
     );
   }
 
