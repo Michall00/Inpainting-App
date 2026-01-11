@@ -140,15 +140,11 @@ class _InpaintingPageState extends State<InpaintingPage>
     final blank = _createBlankMaskImage(resized.width, resized.height);
 
     _transformationController.value = Matrix4.identity();
-    setState(() {
-      _controller.resetSession(
-        tempFile: tempFile,
-        resized: resized,
-        blankMask: blank,
-      );
-      _controller.isSegmentationInProgress = false;
-      _controller.isInpaintingInProgress = false;
-    });
+    _controller.resetSessionWithFlags(
+      tempFile: tempFile,
+      resized: resized,
+      blankMask: blank,
+    );
     _updateMaskPulse();
   }
 
@@ -167,7 +163,7 @@ class _InpaintingPageState extends State<InpaintingPage>
     );
     AppLogger.log('Segmentation from point requested: $point');
 
-    _controller.isSegmentationInProgress = true;
+    _controller.setSegmentationInProgress(true);
     _updateMaskPulse();
     try {
       final segmentationStart = DateTime.now();
@@ -219,7 +215,7 @@ class _InpaintingPageState extends State<InpaintingPage>
 
       await _applySegmentationResult(result);
       if (!mounted) return;
-      setState(() {
+      _controller.update(() {
         _session.interaction.positivePoints
           ..clear()
           ..addAll(newPositive);
@@ -240,7 +236,7 @@ class _InpaintingPageState extends State<InpaintingPage>
         SnackBar(content: Text('Segmentation failed: $error')),
       );
     } finally {
-      if (mounted) setState(() => _controller.isSegmentationInProgress = false);
+      if (mounted) _controller.setSegmentationInProgress(false);
       _updateMaskPulse();
     }
   }
@@ -253,7 +249,7 @@ class _InpaintingPageState extends State<InpaintingPage>
 
   void _clearManualMask() {
     if (_session.image.width == null || _session.image.height == null) return;
-    setState(() {
+    _controller.update(() {
       _session.interaction.points.clear();
       if (_session.mask.segmentationBytes != null) {
         _session.mask.image = img.decodeImage(_session.mask.segmentationBytes!)!;
@@ -268,7 +264,7 @@ class _InpaintingPageState extends State<InpaintingPage>
     if (_session.image.file == null || _controller.isSegmentationInProgress) return;
     AppLogger.log('Segmentation from bbox requested: $bbox');
 
-    _controller.isSegmentationInProgress = true;
+    _controller.setSegmentationInProgress(true);
     try {
       final segmentationStart = DateTime.now();
       FirebaseAnalytics.instance.logEvent(
@@ -313,7 +309,7 @@ class _InpaintingPageState extends State<InpaintingPage>
 
       await _applySegmentationResult(result);
       if (!mounted) return;
-      setState(() {
+      _controller.update(() {
         _session.interaction.positivePoints.clear();
         _session.interaction.negativePoints.clear();
         _session.segmentation.segmentationImageRect = bbox;
@@ -331,7 +327,7 @@ class _InpaintingPageState extends State<InpaintingPage>
         SnackBar(content: Text('Segmentation failed: $error')),
       );
     } finally {
-      if (mounted) setState(() => _controller.isSegmentationInProgress = false);
+      if (mounted) _controller.setSegmentationInProgress(false);
       _updateMaskPulse();
     }
   }
@@ -352,8 +348,6 @@ class _InpaintingPageState extends State<InpaintingPage>
 
   Future<void> _applySegmentationResult(dynamic result) async {
     await _controller.applySegmentationResult(result);
-    if (!mounted) return;
-    setState(() {});
   }
 
   Future<void> _refineSegmentation(Offset point) async {
@@ -405,7 +399,7 @@ class _InpaintingPageState extends State<InpaintingPage>
     final update = refinement.update!;
 
     if (mounted) {
-      setState(() {
+      _controller.update(() {
         _controller.isSegmentationInProgress = true;
         _session.interaction.positivePoints
           ..clear()
@@ -434,7 +428,7 @@ class _InpaintingPageState extends State<InpaintingPage>
       );
       await _applySegmentationResult(result);
       if (!mounted) return;
-      setState(() {
+      _controller.update(() {
         _session.interaction.lastTapImagePoint = null;
         _controller.isSegmentationInProgress = false;
       });
@@ -455,7 +449,7 @@ class _InpaintingPageState extends State<InpaintingPage>
         stackTrace,
       );
       if (!mounted) return;
-      setState(() {
+      _controller.update(() {
         _session.interaction.positivePoints
           ..clear()
           ..addAll(previousPositive);
@@ -624,7 +618,7 @@ class _InpaintingPageState extends State<InpaintingPage>
   Future<void> _runInpainting() async {
     if (_session.image.file == null || _session.mask.image == null) return;
 
-    _controller.isInpaintingInProgress = true;
+    _controller.setInpaintingInProgress(true);
     _updateMaskPulse();
 
     try {
@@ -636,7 +630,7 @@ class _InpaintingPageState extends State<InpaintingPage>
           'height': _session.image.height!,
           'model': _controller.inpaintingModel.modelName,
           'quantization': _controller.inpaintingModel.quantizationType,
-        'environment': _controller.lastInpaintingExecutionProvider,
+          'environment': _controller.lastInpaintingExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -662,7 +656,7 @@ class _InpaintingPageState extends State<InpaintingPage>
           'model': _controller.inpaintingModel.modelName,
           'quantization': _controller.inpaintingModel.quantizationType,
           'inference_ms': output.inferenceDurationMs,
-        'environment': _controller.lastInpaintingExecutionProvider,
+          'environment': _controller.lastInpaintingExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -683,7 +677,7 @@ class _InpaintingPageState extends State<InpaintingPage>
           'inpainting_inference_ms': output.inferenceDurationMs,
           'model': _controller.inpaintingModel.modelName,
           'quantization': _controller.inpaintingModel.quantizationType,
-        'environment': _controller.lastInpaintingExecutionProvider,
+          'environment': _controller.lastInpaintingExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -691,7 +685,7 @@ class _InpaintingPageState extends State<InpaintingPage>
 
       _startNewEditingSession(resized: decoded, tempFile: newTemp);
     } finally {
-      _controller.isInpaintingInProgress = false;
+      _controller.setInpaintingInProgress(false);
       _updateMaskPulse();
     }
   }
@@ -743,10 +737,10 @@ class _InpaintingPageState extends State<InpaintingPage>
     if (_session.mask.segmentationBytes != null) {
       _refineSegmentation(imagePoint);
     } else {
-      setState(() {
-        _session.interaction.mode = InteractionMode.point;
-        _session.interaction.lastTapImagePoint = imagePoint;
-      });
+    _controller.update(() {
+      _session.interaction.mode = InteractionMode.point;
+      _session.interaction.lastTapImagePoint = imagePoint;
+    });
       if (!_controller.isSegmentationInProgress) {
         await _onSegmentPressed();
       }
@@ -766,7 +760,7 @@ class _InpaintingPageState extends State<InpaintingPage>
     );
     final scenePoint = _globalToScene(details.globalPosition);
     if (scenePoint == null) return;
-    setState(() {
+    _controller.update(() {
       _session.interaction.mode = InteractionMode.draw;
       _session.interaction.lastTapImagePoint = null;
       _addStrokePoint(
@@ -786,7 +780,7 @@ class _InpaintingPageState extends State<InpaintingPage>
   ) {
     final scenePoint = _globalToScene(details.globalPosition);
     if (scenePoint == null) return;
-    setState(() {
+    _controller.update(() {
       _addStrokePoint(
         scenePoint,
         drawW,
@@ -797,7 +791,7 @@ class _InpaintingPageState extends State<InpaintingPage>
   }
 
   Future<void> _handlePanEnd() async {
-    setState(() => _session.interaction.points.add(Offset.infinite));
+    _controller.update(() => _session.interaction.points.add(Offset.infinite));
     final hasStroke = _session.interaction.points.any((point) => point.isFinite);
     if (hasStroke && !_controller.isSegmentationInProgress) {
       await _onSegmentPressed();
@@ -808,6 +802,7 @@ class _InpaintingPageState extends State<InpaintingPage>
   void dispose() {
     _maskPulseController.dispose();
     _transformationController.dispose();
+    _controller.dispose();
     super.dispose();
   }
 
@@ -911,9 +906,7 @@ class _InpaintingPageState extends State<InpaintingPage>
       },
     );
     if (precision != null) {
-      setState(() {
-        _controller.segmentationPrecision = precision;
-      });
+      _controller.setSegmentationPrecision(precision);
       FirebaseAnalytics.instance.logEvent(
         name: 'segmentation_precision_selected',
         parameters: {
@@ -973,9 +966,7 @@ class _InpaintingPageState extends State<InpaintingPage>
     );
 
     if (provider != null) {
-      setState(() {
-        _controller.setExecutionProvider(provider);
-      });
+      _controller.setExecutionProvider(provider);
       FirebaseAnalytics.instance.logEvent(
         name: 'execution_provider_selected',
         parameters: {
@@ -1031,9 +1022,7 @@ class _InpaintingPageState extends State<InpaintingPage>
       },
     );
     if (model != null) {
-      setState(() {
-        _controller.inpaintingModel = model;
-      });
+      _controller.setInpaintingModel(model);
       FirebaseAnalytics.instance.logEvent(
         name: 'inpainting_model_selected',
         parameters: {
@@ -1047,138 +1036,149 @@ class _InpaintingPageState extends State<InpaintingPage>
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    final Widget canvasChild;
-    if (_session.output.bytes != null) {
-      canvasChild = Center(
-        child: Image.memory(
-          _session.output.bytes!,
-          width: _session.image.width?.toDouble(),
-          height: _session.image.height?.toDouble(),
-          fit: BoxFit.contain,
-        ),
-      );
-    } else if (_session.image.file == null) {
-      canvasChild = const InpaintingEmptyState();
-    } else {
-      canvasChild = InpaintingImageStack(
-        imageFile: _session.image.file,
-        previewMaskBytes: _session.mask.previewBytes,
-        imageWidth: _session.image.width,
-        imageHeight: _session.image.height,
-        points: _session.interaction.points,
-        maskPulse: _maskPulse,
-        imageKey: _imageKey,
-        interactiveViewerKey: _interactiveViewerKey,
-        transformationController: _transformationController,
-        onCanvasSize: (size) => _session.canvas.size = size,
-        brushWidthForDraw: _currentBrushSceneWidth,
-        onTapDown: _handleTapDown,
-        onTapCancel: _handleTapCancel,
-        onTapUp: _handleTapUp,
-        onPanStart: _handlePanStart,
-        onPanUpdate: _handlePanUpdate,
-        onPanEnd: _handlePanEnd,
-      );
-    }
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final colorScheme = Theme.of(context).colorScheme;
+        final Widget canvasChild;
+        if (_session.output.bytes != null) {
+          canvasChild = Center(
+            child: Image.memory(
+              _session.output.bytes!,
+              width: _session.image.width?.toDouble(),
+              height: _session.image.height?.toDouble(),
+              fit: BoxFit.contain,
+            ),
+          );
+        } else if (_session.image.file == null) {
+          canvasChild = const InpaintingEmptyState();
+        } else {
+          canvasChild = InpaintingImageStack(
+            imageFile: _session.image.file,
+            previewMaskBytes: _session.mask.previewBytes,
+            imageWidth: _session.image.width,
+            imageHeight: _session.image.height,
+            points: _session.interaction.points,
+            maskPulse: _maskPulse,
+            imageKey: _imageKey,
+            interactiveViewerKey: _interactiveViewerKey,
+            transformationController: _transformationController,
+            onCanvasSize: (size) => _session.canvas.size = size,
+            brushWidthForDraw: _currentBrushSceneWidth,
+            onTapDown: _handleTapDown,
+            onTapCancel: _handleTapCancel,
+            onTapUp: _handleTapUp,
+            onPanStart: _handlePanStart,
+            onPanUpdate: _handlePanUpdate,
+            onPanEnd: _handlePanEnd,
+          );
+        }
 
-    return Scaffold(
-      body: Stack(
-        children: [
-          const InpaintingBackground(),
-          Positioned(
-            top: -60,
-            right: -40,
-            child: Container(
-              width: 180,
-              height: 180,
-              decoration: BoxDecoration(
-                color: colorScheme.primary.withOpacity(0.12),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          Positioned(
-            bottom: 120,
-            left: -30,
-            child: Container(
-              width: 140,
-              height: 140,
-              decoration: BoxDecoration(
-                color: colorScheme.secondary.withOpacity(0.12),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          SafeArea(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                InpaintingHeader(
-                  segmentationPrecisionLabel: _controller.segmentationPrecision.label,
-                  inpaintingModelLabel: _controller.inpaintingModel.label,
-                  executionProviderLabel: _executionProviderLabel,
-                  isSegmentationInProgress: _controller.isSegmentationInProgress,
+        return Scaffold(
+          body: Stack(
+            children: [
+              const InpaintingBackground(),
+              Positioned(
+                top: -60,
+                right: -40,
+                child: Container(
+                  width: 180,
+                  height: 180,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
                 ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                    child: Center(
-                      child: AspectRatio(
-                        aspectRatio: 1,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: colorScheme.surface.withOpacity(0.95),
-                            borderRadius: BorderRadius.circular(28),
-                            border: Border.all(
-                              color: colorScheme.outline.withOpacity(0.08),
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.08),
-                                blurRadius: 24,
-                                offset: const Offset(0, 12),
+              ),
+              Positioned(
+                bottom: 120,
+                left: -30,
+                child: Container(
+                  width: 140,
+                  height: 140,
+                  decoration: BoxDecoration(
+                    color: colorScheme.secondary.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    InpaintingHeader(
+                      segmentationPrecisionLabel:
+                          _controller.segmentationPrecision.label,
+                      inpaintingModelLabel: _controller.inpaintingModel.label,
+                      executionProviderLabel: _executionProviderLabel,
+                      isSegmentationInProgress:
+                          _controller.isSegmentationInProgress,
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                        child: Center(
+                          child: AspectRatio(
+                            aspectRatio: 1,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: colorScheme.surface.withOpacity(0.95),
+                                borderRadius: BorderRadius.circular(28),
+                                border: Border.all(
+                                  color: colorScheme.outline.withOpacity(0.08),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.08),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 12),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(24),
-                            child: canvasChild,
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(24),
+                                child: canvasChild,
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
-      bottomNavigationBar: InpaintingActionBar(
-        onPick: _pickImage,
-        onCamera: _pickImageFromCamera,
-        onInpaint: _runInpainting,
-        onSave: _session.image.file == null ? null : _saveCurrentImage,
-        onSelectSegmentationModel: _selectSegmentationPrecision,
-        onSelectExecutionProvider: _selectExecutionProvider,
-        onSelectInpaintingModel: _selectInpaintingModel,
-        showHintControls: _session.interaction.mode == InteractionMode.point &&
-            _session.mask.segmentationBytes != null,
-        isPositiveSelected:
-            _session.interaction.pointMode == SegmentationPointMode.positive,
-        isNegativeSelected:
-            _session.interaction.pointMode == SegmentationPointMode.negative,
-        isSegmentationInProgress: _controller.isSegmentationInProgress,
-        onSelectPositive: () {
-          setState(() => _session.interaction.pointMode = SegmentationPointMode.positive);
-        },
-        onSelectNegative: () {
-          setState(() => _session.interaction.pointMode = SegmentationPointMode.negative);
-        },
-        showClear: _session.interaction.mode == InteractionMode.draw && _hasManualDrawing,
-        onClear: _clearManualMask,
-      ),
+          bottomNavigationBar: InpaintingActionBar(
+            onPick: _pickImage,
+            onCamera: _pickImageFromCamera,
+            onInpaint: _runInpainting,
+            onSave: _session.image.file == null ? null : _saveCurrentImage,
+            onSelectSegmentationModel: _selectSegmentationPrecision,
+            onSelectExecutionProvider: _selectExecutionProvider,
+            onSelectInpaintingModel: _selectInpaintingModel,
+            showHintControls:
+                _session.interaction.mode == InteractionMode.point &&
+                    _session.mask.segmentationBytes != null,
+            isPositiveSelected:
+                _session.interaction.pointMode == SegmentationPointMode.positive,
+            isNegativeSelected:
+                _session.interaction.pointMode == SegmentationPointMode.negative,
+            isSegmentationInProgress: _controller.isSegmentationInProgress,
+            onSelectPositive: () {
+              _controller.update(() => _session.interaction.pointMode =
+                  SegmentationPointMode.positive);
+            },
+            onSelectNegative: () {
+              _controller.update(() => _session.interaction.pointMode =
+                  SegmentationPointMode.negative);
+            },
+            showClear: _session.interaction.mode == InteractionMode.draw &&
+                _hasManualDrawing,
+            onClear: _clearManualMask,
+          ),
+        );
+      },
     );
   }
 }
