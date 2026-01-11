@@ -23,7 +23,8 @@ class InpaintingPage extends StatefulWidget {
   State<InpaintingPage> createState() => _InpaintingPageState();
 }
 
-class _InpaintingPageState extends State<InpaintingPage> {
+class _InpaintingPageState extends State<InpaintingPage>
+    with SingleTickerProviderStateMixin {
   File? _imageFile;
   img.Image? _maskImage;
   int? _imageWidth;
@@ -49,6 +50,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
   SegmentationPrecision _segmentationPrecision = SegmentationPrecision.fp32;
   InpaintingModel _inpaintingModel = InpaintingModel.fp32;
   ExecutionProvider _executionProvider = ExecutionProvider.auto;
+  bool _isInpaintingInProgress = false;
+  late final AnimationController _maskPulseController;
+  late final Animation<double> _maskPulse;
 
   static const double _baseBrushSceneWidth = 20.0;
   bool get _hasManualDrawing => _points.any((offset) => offset.isFinite);
@@ -219,6 +223,34 @@ class _InpaintingPageState extends State<InpaintingPage> {
     }
   }
 
+  @override
+  void initState() {
+    super.initState();
+    _maskPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _maskPulse = CurvedAnimation(
+      parent: _maskPulseController,
+      curve: Curves.easeInOut,
+    );
+    _maskPulseController.repeat(reverse: true);
+  }
+
+  void _updateMaskPulse() {
+    final shouldPulse =
+        !_isSegmentationInProgress && !_isInpaintingInProgress;
+    if (shouldPulse) {
+      if (!_maskPulseController.isAnimating) {
+        _maskPulseController.repeat(reverse: true);
+      }
+    } else {
+      if (_maskPulseController.isAnimating) {
+        _maskPulseController.stop();
+      }
+    }
+  }
+
   Future<void> _pickImage() async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: ImageSource.gallery);
@@ -300,7 +332,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
       _negativePoints.clear();
       _pointMode = SegmentationPointMode.positive;
       _isSegmentationInProgress = false;
+      _isInpaintingInProgress = false;
     });
+    _updateMaskPulse();
   }
 
   Future<void> _runSegmentationFromClick(Offset point) async {
@@ -319,6 +353,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
     AppLogger.log('Segmentation from point requested: $point');
 
     _isSegmentationInProgress = true;
+    _updateMaskPulse();
+    _updateMaskPulse();
     try {
       final segmentationStart = DateTime.now();
       FirebaseAnalytics.instance.logEvent(
@@ -392,6 +428,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       );
     } finally {
       if (mounted) setState(() => _isSegmentationInProgress = false);
+      _updateMaskPulse();
     }
   }
 
@@ -483,6 +520,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
       );
     } finally {
       if (mounted) setState(() => _isSegmentationInProgress = false);
+      _updateMaskPulse();
     }
   }
 
@@ -620,6 +658,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
           ..clear()
           ..addAll(updatedNegative);
       });
+      _updateMaskPulse();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -643,6 +682,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         _lastTapImagePoint = null;
         _isSegmentationInProgress = false;
       });
+      _updateMaskPulse();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -668,6 +708,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
           ..addAll(previousNegative);
         _isSegmentationInProgress = false;
       });
+      _updateMaskPulse();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Refinement failed: $error')),
       );
@@ -834,69 +875,79 @@ class _InpaintingPageState extends State<InpaintingPage> {
   Future<void> _runInpainting() async {
     if (_imageFile == null || _maskImage == null) return;
 
-    final inpaintingStart = DateTime.now();
-    FirebaseAnalytics.instance.logEvent(
-      name: 'inpainting_started',
-      parameters: {
-        'width': _imageWidth!,
-        'height': _imageHeight!,
-        'model': _inpaintingModelName,
-        'quantization': _inpaintingQuantizationType,
-        'environment': InpaintingService.lastExecutionProvider,
-        'device': AppLogger.deviceInfo,
-        'os_version': AppLogger.osVersion,
-      },
-    );
+    _isInpaintingInProgress = true;
+    _updateMaskPulse();
 
-    final bytes = await _imageFile!.readAsBytes();
-    final originalImage = img.decodeImage(bytes)!;
+    try {
+      final inpaintingStart = DateTime.now();
+      FirebaseAnalytics.instance.logEvent(
+        name: 'inpainting_started',
+        parameters: {
+          'width': _imageWidth!,
+          'height': _imageHeight!,
+          'model': _inpaintingModelName,
+          'quantization': _inpaintingQuantizationType,
+          'environment': InpaintingService.lastExecutionProvider,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
+        },
+      );
 
-    if (_segmentationMask != null) {
-      _maskImage = img.decodeImage(_segmentationMask!)!;
+      final bytes = await _imageFile!.readAsBytes();
+      final originalImage = img.decodeImage(bytes)!;
+
+      if (_segmentationMask != null) {
+        _maskImage = img.decodeImage(_segmentationMask!)!;
+      }
+
+      final modelData = await rootBundle.load(_inpaintingModelAsset);
+
+      final dilated = dilateMask(_maskImage!, radius: 20);
+
+      final output = await InpaintingService.runInpainting(
+        original: originalImage,
+        mask: dilated,
+        modelData: modelData,
+      );
+
+      FirebaseAnalytics.instance.logEvent(
+        name: 'inpainting_inference',
+        parameters: {
+          'model': _inpaintingModelName,
+          'quantization': _inpaintingQuantizationType,
+          'inference_ms': output.inferenceDurationMs,
+          'environment': InpaintingService.lastExecutionProvider,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
+        },
+      );
+
+      final inpaintingEnd = DateTime.now();
+      final durationMs =
+          inpaintingEnd.difference(inpaintingStart).inMilliseconds;
+
+      final decoded = img.decodeImage(output.bytes)!;
+      final newTemp =
+          await ImageService.saveTempImage(output.bytes, 'input.png');
+
+      FirebaseAnalytics.instance.logEvent(
+        name: 'inpainting_completed',
+        parameters: {
+          'inpainting_duration_ms': durationMs,
+          'inpainting_inference_ms': output.inferenceDurationMs,
+          'model': _inpaintingModelName,
+          'quantization': _inpaintingQuantizationType,
+          'environment': InpaintingService.lastExecutionProvider,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
+        },
+      );
+
+      _startNewEditingSession(resized: decoded, tempFile: newTemp);
+    } finally {
+      _isInpaintingInProgress = false;
+      _updateMaskPulse();
     }
-
-    final modelData = await rootBundle.load(_inpaintingModelAsset);
-
-    final dilated = dilateMask(_maskImage!, radius: 20);
-
-    final output = await InpaintingService.runInpainting(
-      original: originalImage,
-      mask: dilated,
-      modelData: modelData,
-    );
-
-    FirebaseAnalytics.instance.logEvent(
-      name: 'inpainting_inference',
-      parameters: {
-        'model': _inpaintingModelName,
-        'quantization': _inpaintingQuantizationType,
-        'inference_ms': output.inferenceDurationMs,
-        'environment': InpaintingService.lastExecutionProvider,
-        'device': AppLogger.deviceInfo,
-        'os_version': AppLogger.osVersion,
-      },
-    );
-
-    final inpaintingEnd = DateTime.now();
-    final durationMs = inpaintingEnd.difference(inpaintingStart).inMilliseconds;
-
-    final decoded = img.decodeImage(output.bytes)!;
-    final newTemp = await ImageService.saveTempImage(output.bytes, 'input.png');
-
-    FirebaseAnalytics.instance.logEvent(
-      name: 'inpainting_completed',
-      parameters: {
-        'inpainting_duration_ms': durationMs,
-        'inpainting_inference_ms': output.inferenceDurationMs,
-        'model': _inpaintingModelName,
-        'quantization': _inpaintingQuantizationType,
-        'environment': InpaintingService.lastExecutionProvider,
-        'device': AppLogger.deviceInfo,
-        'os_version': AppLogger.osVersion,
-      },
-    );
-
-    _startNewEditingSession(resized: decoded, tempFile: newTemp);
   }
 
   Widget _buildImageStack() {
@@ -1033,6 +1084,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
                             painter: MaskPainter(
                               _points,
                               strokeWidth: brushSceneWidth,
+                              pulse: _maskPulse,
                             ),
                             size: Size(drawW, drawH),
                           ),
@@ -1083,6 +1135,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
 
   @override
   void dispose() {
+    _maskPulseController.dispose();
     _transformationController.dispose();
     super.dispose();
   }
