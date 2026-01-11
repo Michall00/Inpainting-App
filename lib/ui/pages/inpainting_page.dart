@@ -17,7 +17,7 @@ import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:vector_math/vector_math_64.dart' show Matrix4;
 import 'inpainting_session_state.dart';
-import 'inpainting_pipeline.dart';
+import 'inpainting_controller.dart';
 import 'model_info.dart';
 import 'inpainting_types.dart';
 
@@ -30,16 +30,12 @@ class InpaintingPage extends StatefulWidget {
 
 class _InpaintingPageState extends State<InpaintingPage>
     with SingleTickerProviderStateMixin {
-  final InpaintingSessionState _session = InpaintingSessionState();
+  final InpaintingController _controller = InpaintingController();
   final GlobalKey _imageKey = GlobalKey();
   final GlobalKey _interactiveViewerKey = GlobalKey();
   final TransformationController _transformationController =
       TransformationController();
-  bool _isSegmentationInProgress = false;
-  SegmentationPrecision _segmentationPrecision = SegmentationPrecision.fp32;
-  InpaintingModel _inpaintingModel = InpaintingModel.fp32;
-  ExecutionProvider _executionProvider = ExecutionProvider.auto;
-  bool _isInpaintingInProgress = false;
+  InpaintingSessionState get _session => _controller.session;
   late final AnimationController _maskPulseController;
   late final Animation<double> _maskPulse;
   Offset? _tapDownGlobal;
@@ -49,11 +45,11 @@ class _InpaintingPageState extends State<InpaintingPage>
   bool get _hasManualDrawing => _session.hasManualDrawing;
 
   String get _executionProviderLabel {
-    return executionProviderLabel(_executionProvider);
+    return executionProviderLabel(_controller.executionProvider);
   }
 
   String get _executionProviderValue {
-    return executionProviderValue(_executionProvider);
+    return executionProviderValue(_controller.executionProvider);
   }
 
   @override
@@ -71,7 +67,7 @@ class _InpaintingPageState extends State<InpaintingPage>
   }
 
   void _updateMaskPulse() {
-    final shouldPulse = !_isSegmentationInProgress && !_isInpaintingInProgress;
+    final shouldPulse = !_controller.isSegmentationInProgress && !_controller.isInpaintingInProgress;
     if (shouldPulse) {
       if (!_maskPulseController.isAnimating) {
         _maskPulseController.repeat(reverse: true);
@@ -145,20 +141,19 @@ class _InpaintingPageState extends State<InpaintingPage>
 
     _transformationController.value = Matrix4.identity();
     setState(() {
-      _session.resetForNewImage(
+      _controller.resetSession(
         tempFile: tempFile,
-        width: resized.width,
-        height: resized.height,
+        resized: resized,
         blankMask: blank,
       );
-      _isSegmentationInProgress = false;
-      _isInpaintingInProgress = false;
+      _controller.isSegmentationInProgress = false;
+      _controller.isInpaintingInProgress = false;
     });
     _updateMaskPulse();
   }
 
   Future<void> _runSegmentationFromClick(Offset point) async {
-    if (_session.imageFile == null || _isSegmentationInProgress) {
+    if (_session.imageFile == null || _controller.isSegmentationInProgress) {
       if (_session.imageFile == null) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text(".")),
@@ -172,7 +167,7 @@ class _InpaintingPageState extends State<InpaintingPage>
     );
     AppLogger.log('Segmentation from point requested: $point');
 
-    _isSegmentationInProgress = true;
+    _controller.isSegmentationInProgress = true;
     _updateMaskPulse();
     _updateMaskPulse();
     try {
@@ -207,9 +202,9 @@ class _InpaintingPageState extends State<InpaintingPage>
           'segmentation_duration_ms': durationMs,
           'encoder_inference_ms': result.encoderInferenceMs,
           'decoder_inference_ms': result.decoderInferenceMs,
-          'model': _segmentationPrecision.modelName,
-          'quantization': _segmentationPrecision.quantizationType,
-          'environment': InpaintingPipeline.lastSegmentationExecutionProvider,
+          'model': _controller.segmentationPrecision.modelName,
+          'quantization': _controller.segmentationPrecision.quantizationType,
+          'environment': _controller.lastSegmentationExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -218,9 +213,9 @@ class _InpaintingPageState extends State<InpaintingPage>
         'Segmentation from bbox completed in ${durationMs}ms '
         'encoder=${result.encoderInferenceMs}ms '
         'decoder=${result.decoderInferenceMs}ms '
-        'model=${_segmentationPrecision.modelName} '
-        'quantization=${_segmentationPrecision.quantizationType} '
-        'env=${InpaintingPipeline.lastSegmentationExecutionProvider}',
+        'model=${_controller.segmentationPrecision.modelName} '
+        'quantization=${_controller.segmentationPrecision.quantizationType} '
+        'env=${_controller.lastSegmentationExecutionProvider}',
       );
 
       await _applySegmentationResult(result);
@@ -246,7 +241,7 @@ class _InpaintingPageState extends State<InpaintingPage>
         SnackBar(content: Text('Segmentation failed: $error')),
       );
     } finally {
-      if (mounted) setState(() => _isSegmentationInProgress = false);
+      if (mounted) setState(() => _controller.isSegmentationInProgress = false);
       _updateMaskPulse();
     }
   }
@@ -271,10 +266,10 @@ class _InpaintingPageState extends State<InpaintingPage>
   }
 
   Future<void> _runSegmentationFromBbox(Rect bbox) async {
-    if (_session.imageFile == null || _isSegmentationInProgress) return;
+    if (_session.imageFile == null || _controller.isSegmentationInProgress) return;
     AppLogger.log('Segmentation from bbox requested: $bbox');
 
-    _isSegmentationInProgress = true;
+    _controller.isSegmentationInProgress = true;
     try {
       final segmentationStart = DateTime.now();
       FirebaseAnalytics.instance.logEvent(
@@ -306,9 +301,9 @@ class _InpaintingPageState extends State<InpaintingPage>
           'segmentation_duration_ms': durationMs,
           'encoder_inference_ms': result.encoderInferenceMs,
           'decoder_inference_ms': result.decoderInferenceMs,
-          'model': _segmentationPrecision.modelName,
-          'quantization': _segmentationPrecision.quantizationType,
-          'environment': InpaintingPipeline.lastSegmentationExecutionProvider,
+          'model': _controller.segmentationPrecision.modelName,
+          'quantization': _controller.segmentationPrecision.quantizationType,
+          'environment': _controller.lastSegmentationExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -337,49 +332,35 @@ class _InpaintingPageState extends State<InpaintingPage>
         SnackBar(content: Text('Segmentation failed: $error')),
       );
     } finally {
-      if (mounted) setState(() => _isSegmentationInProgress = false);
+      if (mounted) setState(() => _controller.isSegmentationInProgress = false);
       _updateMaskPulse();
     }
   }
 
-  Future<SegmentationResult> _callSegmentation({
+  Future<dynamic> _callSegmentation({
     required Rect? bbox,
     required List<Offset> positivePoints,
     required List<Offset> negativePoints,
     required Float32List? lowResMask,
   }) async {
-    return InpaintingPipeline.callSegmentation(
-      imageFile: _session.imageFile!,
+    return _controller.callSegmentation(
       bbox: bbox,
       positivePoints: positivePoints,
       negativePoints: negativePoints,
       lowResMask: lowResMask,
-      encoderAsset: _segmentationPrecision.encoderAsset,
-      decoderAsset: _segmentationPrecision.decoderAsset,
     );
   }
 
-  Future<void> _applySegmentationResult(SegmentationResult result) async {
-    if (_session.imageFile == null) return;
-    await InpaintingPipeline.applySegmentationResult(
-      imageFile: _session.imageFile!,
-      result: result,
-      onApply: (visuals) {
-        if (!mounted) return;
-        setState(() {
-          _session.segmentationMask = visuals.maskBytes;
-          _session.maskImage = visuals.maskImage;
-          _session.previewMaskBytes = visuals.overlayBytes;
-          _session.lowResMaskInput = visuals.lowResMask;
-        });
-      },
-    );
+  Future<void> _applySegmentationResult(dynamic result) async {
+    await _controller.applySegmentationResult(result);
+    if (!mounted) return;
+    setState(() {});
   }
 
   Future<void> _refineSegmentation(Offset point) async {
     if (_session.imageFile == null ||
         _session.segmentationMask == null ||
-        _isSegmentationInProgress) {
+        _controller.isSegmentationInProgress) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -401,7 +382,7 @@ class _InpaintingPageState extends State<InpaintingPage>
 
     final previousPositive = List<Offset>.from(_session.positivePoints);
     final previousNegative = List<Offset>.from(_session.negativePoints);
-    final refinement = InpaintingPipeline.validateRefinement(
+    final refinement = _controller.validateRefinement(
       lowResMask: _session.lowResMaskInput,
       isPositive: isPositive,
       point: point,
@@ -423,7 +404,7 @@ class _InpaintingPageState extends State<InpaintingPage>
 
     if (mounted) {
       setState(() {
-        _isSegmentationInProgress = true;
+        _controller.isSegmentationInProgress = true;
         _session.positivePoints
           ..clear()
           ..addAll(update.positivePoints);
@@ -443,20 +424,17 @@ class _InpaintingPageState extends State<InpaintingPage>
     }
 
     try {
-      final result = await InpaintingPipeline.refineSegmentation(
-        imageFile: _session.imageFile!,
+      final result = await _controller.refineSegmentation(
         segmentationImageRect: _session.segmentationImageRect,
         positivePoints: update.positivePoints,
         negativePoints: update.negativePoints,
         lowResMask: _session.lowResMaskInput!,
-        encoderAsset: _segmentationPrecision.encoderAsset,
-        decoderAsset: _segmentationPrecision.decoderAsset,
       );
       await _applySegmentationResult(result);
       if (!mounted) return;
       setState(() {
         _session.lastTapImagePoint = null;
-        _isSegmentationInProgress = false;
+        _controller.isSegmentationInProgress = false;
       });
       _updateMaskPulse();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -482,7 +460,7 @@ class _InpaintingPageState extends State<InpaintingPage>
         _session.negativePoints
           ..clear()
           ..addAll(previousNegative);
-        _isSegmentationInProgress = false;
+        _controller.isSegmentationInProgress = false;
       });
       _updateMaskPulse();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -554,7 +532,7 @@ class _InpaintingPageState extends State<InpaintingPage>
   }
 
   Future<void> _onSegmentPressed() async {
-    if (_isSegmentationInProgress) {
+    if (_controller.isSegmentationInProgress) {
       return;
     }
     if (_session.imageFile == null) {
@@ -644,7 +622,7 @@ class _InpaintingPageState extends State<InpaintingPage>
   Future<void> _runInpainting() async {
     if (_session.imageFile == null || _session.maskImage == null) return;
 
-    _isInpaintingInProgress = true;
+    _controller.isInpaintingInProgress = true;
     _updateMaskPulse();
 
     try {
@@ -654,9 +632,9 @@ class _InpaintingPageState extends State<InpaintingPage>
         parameters: {
           'width': _session.imageWidth!,
           'height': _session.imageHeight!,
-          'model': _inpaintingModel.modelName,
-          'quantization': _inpaintingModel.quantizationType,
-        'environment': InpaintingPipeline.lastInpaintingExecutionProvider,
+          'model': _controller.inpaintingModel.modelName,
+          'quantization': _controller.inpaintingModel.quantizationType,
+        'environment': _controller.lastInpaintingExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -671,19 +649,18 @@ class _InpaintingPageState extends State<InpaintingPage>
 
       final dilated = dilateMask(_session.maskImage!, radius: 20);
 
-      final output = await InpaintingPipeline.runInpainting(
+      final output = await _controller.runInpainting(
         original: originalImage,
         mask: dilated,
-        modelAsset: _inpaintingModel.asset,
       );
 
       FirebaseAnalytics.instance.logEvent(
         name: 'inpainting_inference',
         parameters: {
-          'model': _inpaintingModel.modelName,
-          'quantization': _inpaintingModel.quantizationType,
+          'model': _controller.inpaintingModel.modelName,
+          'quantization': _controller.inpaintingModel.quantizationType,
           'inference_ms': output.inferenceDurationMs,
-        'environment': InpaintingPipeline.lastInpaintingExecutionProvider,
+        'environment': _controller.lastInpaintingExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -702,9 +679,9 @@ class _InpaintingPageState extends State<InpaintingPage>
         parameters: {
           'inpainting_duration_ms': durationMs,
           'inpainting_inference_ms': output.inferenceDurationMs,
-          'model': _inpaintingModel.modelName,
-          'quantization': _inpaintingModel.quantizationType,
-        'environment': InpaintingPipeline.lastInpaintingExecutionProvider,
+          'model': _controller.inpaintingModel.modelName,
+          'quantization': _controller.inpaintingModel.quantizationType,
+        'environment': _controller.lastInpaintingExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -712,7 +689,7 @@ class _InpaintingPageState extends State<InpaintingPage>
 
       _startNewEditingSession(resized: decoded, tempFile: newTemp);
     } finally {
-      _isInpaintingInProgress = false;
+      _controller.isInpaintingInProgress = false;
       _updateMaskPulse();
     }
   }
@@ -768,7 +745,7 @@ class _InpaintingPageState extends State<InpaintingPage>
         _session.mode = InteractionMode.point;
         _session.lastTapImagePoint = imagePoint;
       });
-      if (!_isSegmentationInProgress) {
+      if (!_controller.isSegmentationInProgress) {
         await _onSegmentPressed();
       }
     }
@@ -820,7 +797,7 @@ class _InpaintingPageState extends State<InpaintingPage>
   Future<void> _handlePanEnd() async {
     setState(() => _session.points.add(Offset.infinite));
     final hasStroke = _session.points.any((point) => point.isFinite);
-    if (hasStroke && !_isSegmentationInProgress) {
+    if (hasStroke && !_controller.isSegmentationInProgress) {
       await _onSegmentPressed();
     }
   }
@@ -933,13 +910,13 @@ class _InpaintingPageState extends State<InpaintingPage>
     );
     if (precision != null) {
       setState(() {
-        _segmentationPrecision = precision;
+        _controller.segmentationPrecision = precision;
       });
       FirebaseAnalytics.instance.logEvent(
         name: 'segmentation_precision_selected',
         parameters: {
-          'model': _segmentationPrecision.modelName,
-          'quantization': _segmentationPrecision.quantizationType,
+          'model': _controller.segmentationPrecision.modelName,
+          'quantization': _controller.segmentationPrecision.quantizationType,
         },
       );
       AppLogger.log('Segmentation precision changed to $precision');
@@ -995,9 +972,8 @@ class _InpaintingPageState extends State<InpaintingPage>
 
     if (provider != null) {
       setState(() {
-        _executionProvider = provider;
+        _controller.setExecutionProvider(provider);
       });
-      InpaintingPipeline.setPreferredExecutionProvider(provider);
       FirebaseAnalytics.instance.logEvent(
         name: 'execution_provider_selected',
         parameters: {
@@ -1054,13 +1030,13 @@ class _InpaintingPageState extends State<InpaintingPage>
     );
     if (model != null) {
       setState(() {
-        _inpaintingModel = model;
+        _controller.inpaintingModel = model;
       });
       FirebaseAnalytics.instance.logEvent(
         name: 'inpainting_model_selected',
         parameters: {
-          'model': _inpaintingModel.modelName,
-          'quantization': _inpaintingModel.quantizationType,
+          'model': _controller.inpaintingModel.modelName,
+          'quantization': _controller.inpaintingModel.quantizationType,
         },
       );
       AppLogger.log('Inpainting model changed to $model');
@@ -1137,10 +1113,10 @@ class _InpaintingPageState extends State<InpaintingPage>
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 InpaintingHeader(
-                  segmentationPrecisionLabel: _segmentationPrecision.label,
-                  inpaintingModelLabel: _inpaintingModel.label,
+                  segmentationPrecisionLabel: _controller.segmentationPrecision.label,
+                  inpaintingModelLabel: _controller.inpaintingModel.label,
                   executionProviderLabel: _executionProviderLabel,
-                  isSegmentationInProgress: _isSegmentationInProgress,
+                  isSegmentationInProgress: _controller.isSegmentationInProgress,
                 ),
                 Expanded(
                   child: Padding(
@@ -1191,7 +1167,7 @@ class _InpaintingPageState extends State<InpaintingPage>
             _session.pointMode == SegmentationPointMode.positive,
         isNegativeSelected:
             _session.pointMode == SegmentationPointMode.negative,
-        isSegmentationInProgress: _isSegmentationInProgress,
+        isSegmentationInProgress: _controller.isSegmentationInProgress,
         onSelectPositive: () {
           setState(() => _session.pointMode = SegmentationPointMode.positive);
         },
