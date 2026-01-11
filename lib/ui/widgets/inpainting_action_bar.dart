@@ -76,7 +76,6 @@ class InpaintingActionBar extends StatelessWidget {
                 icon: Icons.auto_fix_high,
                 label: 'Inpaint',
                 tooltip: 'Run inpainting',
-                isPrimary: true,
                 onPressed: onInpaint,
               ),
               _ActionButton(
