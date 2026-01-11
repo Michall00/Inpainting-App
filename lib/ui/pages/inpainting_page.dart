@@ -1023,7 +1023,7 @@ class _InpaintingPageState extends State<InpaintingPage>
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTapDown: _mode == InteractionMode.point
-                              ? (details) {
+                              ? (details) async {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
                                       content:
@@ -1062,6 +1062,9 @@ class _InpaintingPageState extends State<InpaintingPage>
                                       _lastTapImagePoint = imagePoint;
                                       _bbox = null;
                                     });
+                                    if (!_isSegmentationInProgress) {
+                                      await _onSegmentPressed();
+                                    }
                                   }
                                 }
                               : null,
@@ -1101,8 +1104,13 @@ class _InpaintingPageState extends State<InpaintingPage>
                                 }
                               : null,
                           onPanEnd: _mode == InteractionMode.draw
-                              ? (_) {
+                              ? (_) async {
                                   setState(() => _points.add(Offset.infinite));
+                                  final hasStroke =
+                                      _points.any((point) => point.isFinite);
+                                  if (hasStroke && !_isSegmentationInProgress) {
+                                    await _onSegmentPressed();
+                                  }
                                 }
                               : null,
                           child: CustomPaint(
