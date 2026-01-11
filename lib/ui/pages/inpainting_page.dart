@@ -1741,24 +1741,29 @@ class _InpaintingPageState extends State<InpaintingPage> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: colorScheme.surface.withOpacity(0.95),
-                        borderRadius: BorderRadius.circular(28),
-                        border: Border.all(
-                          color: colorScheme.outline.withOpacity(0.08),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.08),
-                            blurRadius: 24,
-                            offset: const Offset(0, 12),
+                    child: Center(
+                      child: AspectRatio(
+                        aspectRatio: 1,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: colorScheme.surface.withOpacity(0.95),
+                            borderRadius: BorderRadius.circular(28),
+                            border: Border.all(
+                              color: colorScheme.outline.withOpacity(0.08),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.08),
+                                blurRadius: 24,
+                                offset: const Offset(0, 12),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: canvasChild,
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(24),
+                            child: canvasChild,
+                          ),
+                        ),
                       ),
                     ),
                   ),
