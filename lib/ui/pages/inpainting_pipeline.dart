@@ -210,11 +210,11 @@ class InpaintingPipeline {
     const light = 235;
     const dark = 215;
     const cellSize = 8;
-    const glowR = 190;
-    const glowG = 210;
-    const glowB = 255;
-    const edgeAlpha = 160;
-    const midAlpha = 110;
+    const glowR = 235;
+    const glowG = 80;
+    const glowB = 230;
+    const edgeAlpha = 200;
+    const midAlpha = 130;
     const fillAlpha = 70;
 
     bool hasOutsideNeighbor(int x, int y, int radius) {
@@ -235,10 +235,10 @@ class InpaintingPipeline {
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
         if (mask.getPixel(x, y).r != 0) continue;
-        final isEdge = hasOutsideNeighbor(x, y, 1);
+        final isEdge = hasOutsideNeighbor(x, y, 2);
         final alpha = isEdge
             ? edgeAlpha
-            : (hasOutsideNeighbor(x, y, 2) ? midAlpha : fillAlpha);
+            : (hasOutsideNeighbor(x, y, 3) ? midAlpha : fillAlpha);
         final isLight = ((x ~/ cellSize) + (y ~/ cellSize)) % 2 == 0;
         final shade = isLight ? light : dark;
         final basePixel = baseImage.getPixel(x, y);
