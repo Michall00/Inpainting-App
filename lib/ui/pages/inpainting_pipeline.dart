@@ -207,9 +207,9 @@ class InpaintingPipeline {
     final overlay = img.Image.from(baseImage);
     final width = overlay.width;
     final height = overlay.height;
-    const r = 72;
-    const g = 167;
-    const b = 255;
+    const light = 235;
+    const dark = 215;
+    const cellSize = 8;
     const edgeAlpha = 160;
     const midAlpha = 110;
     const fillAlpha = 70;
@@ -235,7 +235,10 @@ class InpaintingPipeline {
         final alpha = hasOutsideNeighbor(x, y, 1)
             ? edgeAlpha
             : (hasOutsideNeighbor(x, y, 2) ? midAlpha : fillAlpha);
-        overlay.setPixelRgba(x, y, r, g, b, alpha);
+        final isLight =
+            ((x ~/ cellSize) + (y ~/ cellSize)) % 2 == 0;
+        final shade = isLight ? light : dark;
+        overlay.setPixelRgba(x, y, shade, shade, shade, alpha);
       }
     }
     return overlay;
