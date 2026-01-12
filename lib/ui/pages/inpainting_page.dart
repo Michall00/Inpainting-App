@@ -101,11 +101,7 @@ class _InpaintingPageState extends State<InpaintingPage>
         quality: 100,
         name: "inpainted_${DateTime.now().millisecondsSinceEpoch}.png",
       );
-      if (result['isSuccess'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Image saved to gallery')),
-        );
-      } else {
+      if (result['isSuccess'] != true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Error saving image to gallery')),
         );
@@ -150,17 +146,8 @@ class _InpaintingPageState extends State<InpaintingPage>
 
   Future<void> _runSegmentationFromClick(Offset point) async {
     if (_session.image.file == null || _controller.isSegmentationInProgress) {
-      if (_session.image.file == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(".")),
-        );
-      }
       return;
     }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Starting segmentation from point...")),
-    );
     AppLogger.log('Segmentation from point requested: $point');
 
     _controller.setSegmentationInProgress(true);
@@ -354,25 +341,12 @@ class _InpaintingPageState extends State<InpaintingPage>
     if (_session.image.file == null ||
         _session.mask.segmentationBytes == null ||
         _controller.isSegmentationInProgress) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Refinement skipped because segmentation mask is unavailable.'),
-        ),
-      );
       return;
     }
     final isPositive =
         _session.interaction.pointMode == SegmentationPointMode.positive;
     AppLogger.log(
         'Refining segmentation with ${isPositive ? 'positive' : 'negative'} point: $point');
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-            'Refining segmentation with ${isPositive ? 'positive' : 'negative'} point: $point'),
-      ),
-    );
 
     final previousPositive =
         List<Offset>.from(_session.interaction.positivePoints);
@@ -389,11 +363,6 @@ class _InpaintingPageState extends State<InpaintingPage>
     if (refinement.message != null) {
       AppLogger.log(refinement.message!);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(refinement.message!),
-        ),
-      );
       return;
     }
     final update = refinement.update!;
@@ -409,14 +378,6 @@ class _InpaintingPageState extends State<InpaintingPage>
           ..addAll(update.negativePoints);
       });
       _updateMaskPulse();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Added ${isPositive ? 'positive' : 'negative'} point at '
-            '(${point.dx.toStringAsFixed(1)}, ${point.dy.toStringAsFixed(1)})',
-          ),
-        ),
-      );
     }
 
     try {
@@ -433,15 +394,6 @@ class _InpaintingPageState extends State<InpaintingPage>
         _controller.isSegmentationInProgress = false;
       });
       _updateMaskPulse();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isPositive
-                ? 'Positive point applied to mask'
-                : 'Negative point applied to mask',
-          ),
-        ),
-      );
     } catch (error, stackTrace) {
       AppLogger.error(
         'Segmentation refinement failed',
@@ -544,17 +496,9 @@ class _InpaintingPageState extends State<InpaintingPage>
 
     if (_session.interaction.mode == InteractionMode.point) {
       if (_session.interaction.lastTapImagePoint == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(
-                  "Click on the object in the image to start segmentation")),
-        );
         return;
       }
       final point = _session.interaction.lastTapImagePoint!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Segmentation point: $point")),
-      );
       await _runSegmentationFromClick(point);
       return;
     }
@@ -609,9 +553,6 @@ class _InpaintingPageState extends State<InpaintingPage>
           .toDouble(),
     );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Segmentation from bbox: $box")),
-    );
     await _runSegmentationFromBbox(imageRect);
   }
 
@@ -753,11 +694,6 @@ class _InpaintingPageState extends State<InpaintingPage>
     double drawH,
     double brushSceneWidth,
   ) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Clicked on image (draw)."),
-      ),
-    );
     final scenePoint = _globalToScene(details.globalPosition);
     if (scenePoint == null) return;
     _controller.update(() {
