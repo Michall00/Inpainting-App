@@ -210,6 +210,9 @@ class InpaintingPipeline {
     const light = 235;
     const dark = 215;
     const cellSize = 8;
+    const glowR = 190;
+    const glowG = 210;
+    const glowB = 255;
     const edgeAlpha = 160;
     const midAlpha = 110;
     const fillAlpha = 70;
@@ -232,13 +235,24 @@ class InpaintingPipeline {
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
         if (mask.getPixel(x, y).r != 0) continue;
-        final alpha = hasOutsideNeighbor(x, y, 1)
+        final isEdge = hasOutsideNeighbor(x, y, 1);
+        final alpha = isEdge
             ? edgeAlpha
             : (hasOutsideNeighbor(x, y, 2) ? midAlpha : fillAlpha);
-        final isLight =
-            ((x ~/ cellSize) + (y ~/ cellSize)) % 2 == 0;
+        final isLight = ((x ~/ cellSize) + (y ~/ cellSize)) % 2 == 0;
         final shade = isLight ? light : dark;
-        overlay.setPixelRgba(x, y, shade, shade, shade, alpha);
+        final basePixel = baseImage.getPixel(x, y);
+        final baseR = basePixel.r;
+        final baseG = basePixel.g;
+        final baseB = basePixel.b;
+        final overlayR = isEdge ? glowR : shade;
+        final overlayG = isEdge ? glowG : shade;
+        final overlayB = isEdge ? glowB : shade;
+        final t = alpha / 255.0;
+        final outR = (baseR * (1 - t) + overlayR * t).round();
+        final outG = (baseG * (1 - t) + overlayG * t).round();
+        final outB = (baseB * (1 - t) + overlayB * t).round();
+        overlay.setPixelRgba(x, y, outR, outG, outB, 255);
       }
     }
     return overlay;
