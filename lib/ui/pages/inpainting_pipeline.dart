@@ -210,11 +210,12 @@ class InpaintingPipeline {
     const light = 235;
     const dark = 215;
     const cellSize = 8;
+    const tintAlpha = 0.18;
     const glowR = 235;
     const glowG = 80;
     const glowB = 230;
-    const edgeAlpha = 200;
-    const midAlpha = 130;
+    const edgeAlpha = 230;
+    const midAlpha = 150;
     const fillAlpha = 70;
 
     bool hasOutsideNeighbor(int x, int y, int radius) {
@@ -235,19 +236,22 @@ class InpaintingPipeline {
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
         if (mask.getPixel(x, y).r != 0) continue;
-        final isEdge = hasOutsideNeighbor(x, y, 2);
+        final isEdge = hasOutsideNeighbor(x, y, 3);
         final alpha = isEdge
             ? edgeAlpha
-            : (hasOutsideNeighbor(x, y, 3) ? midAlpha : fillAlpha);
+            : (hasOutsideNeighbor(x, y, 4) ? midAlpha : fillAlpha);
         final isLight = ((x ~/ cellSize) + (y ~/ cellSize)) % 2 == 0;
-        final shade = isLight ? light : dark;
+        final baseShade = isLight ? light : dark;
+        final tintR = (baseShade * (1 - tintAlpha) + glowR * tintAlpha).round();
+        final tintG = (baseShade * (1 - tintAlpha) + glowG * tintAlpha).round();
+        final tintB = (baseShade * (1 - tintAlpha) + glowB * tintAlpha).round();
         final basePixel = baseImage.getPixel(x, y);
         final baseR = basePixel.r;
         final baseG = basePixel.g;
         final baseB = basePixel.b;
-        final overlayR = isEdge ? glowR : shade;
-        final overlayG = isEdge ? glowG : shade;
-        final overlayB = isEdge ? glowB : shade;
+        final overlayR = isEdge ? glowR : tintR;
+        final overlayG = isEdge ? glowG : tintG;
+        final overlayB = isEdge ? glowB : tintB;
         final t = alpha / 255.0;
         final outR = (baseR * (1 - t) + overlayR * t).round();
         final outG = (baseG * (1 - t) + overlayG * t).round();
