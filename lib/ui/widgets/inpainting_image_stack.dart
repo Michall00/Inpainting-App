@@ -92,12 +92,27 @@ class InpaintingImageStack extends StatelessWidget {
                       Positioned.fill(
                         child: Image(
                           key: imageKey,
-                          image: previewMaskBytes != null
-                              ? MemoryImage(previewMaskBytes!)
-                              : FileImage(imageFile!) as ImageProvider,
+                          image: FileImage(imageFile!),
                           fit: BoxFit.contain,
                         ),
                       ),
+                      if (previewMaskBytes != null)
+                        Positioned.fill(
+                          child: AnimatedBuilder(
+                            animation: maskPulse,
+                            builder: (context, _) {
+                              final overlayOpacity =
+                                  0.75 + 0.25 * maskPulse.value;
+                              return Opacity(
+                                opacity: overlayOpacity,
+                                child: Image(
+                                  image: MemoryImage(previewMaskBytes!),
+                                  fit: BoxFit.contain,
+                                ),
+                              );
+                            },
+                          ),
+                        ),
                       Positioned.fill(
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,

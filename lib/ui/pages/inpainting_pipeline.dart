@@ -205,19 +205,24 @@ class InpaintingPipeline {
   }
 
   static img.Image _composeOverlay(img.Image baseImage, img.Image mask) {
-    final overlay = img.Image.from(baseImage);
+    final overlay = img.Image(
+      width: baseImage.width,
+      height: baseImage.height,
+      numChannels: 4,
+    );
     final width = overlay.width;
     final height = overlay.height;
-    const light = 235;
-    const dark = 215;
-    const cellSize = 8;
-    const tintAlpha = 0.18;
-    const glowR = 235;
-    const glowG = 80;
-    const glowB = 230;
-    const edgeAlpha = 230;
-    const midAlpha = 150;
-    const fillAlpha = 70;
+    const light = 236;
+    const dark = 210;
+    const cellSize = 6;
+    const tintAlpha = 0.28;
+    const glowR = 255;
+    const glowG = 70;
+    const glowB = 210;
+    const edgeStrongAlpha = 235;
+    const edgeMidAlpha = 185;
+    const edgeSoftAlpha = 135;
+    const fillAlpha = 90;
 
     bool hasOutsideNeighbor(int x, int y, int radius) {
       for (int dy = -radius; dy <= radius; dy++) {
@@ -237,22 +242,33 @@ class InpaintingPipeline {
     for (int y = 0; y < height; y++) {
       for (int x = 0; x < width; x++) {
         if (mask.getPixel(x, y).r != 0) continue;
-        final isEdge = hasOutsideNeighbor(x, y, 3);
-        final alpha = isEdge
-            ? edgeAlpha
-            : (hasOutsideNeighbor(x, y, 4) ? midAlpha : fillAlpha);
+        final isEdgeStrong = hasOutsideNeighbor(x, y, 2);
+        final isEdgeMid = !isEdgeStrong && hasOutsideNeighbor(x, y, 5);
+        final isEdgeSoft =
+            !isEdgeStrong && !isEdgeMid && hasOutsideNeighbor(x, y, 8);
+        final alpha = isEdgeStrong
+            ? edgeStrongAlpha
+            : (isEdgeMid
+                ? edgeMidAlpha
+                : (isEdgeSoft ? edgeSoftAlpha : fillAlpha));
         final isLight = ((x ~/ cellSize) + (y ~/ cellSize)) % 2 == 0;
         final baseShade = isLight ? light : dark;
-        final tintR = (baseShade * (1 - tintAlpha) + glowR * tintAlpha).round();
-        final tintG = (baseShade * (1 - tintAlpha) + glowG * tintAlpha).round();
-        final tintB = (baseShade * (1 - tintAlpha) + glowB * tintAlpha).round();
+        final localTintAlpha = isEdgeStrong
+            ? 0.55
+            : (isEdgeMid ? 0.45 : (isEdgeSoft ? 0.36 : tintAlpha));
+        final tintR =
+            (baseShade * (1 - localTintAlpha) + glowR * localTintAlpha).round();
+        final tintG =
+            (baseShade * (1 - localTintAlpha) + glowG * localTintAlpha).round();
+        final tintB =
+            (baseShade * (1 - localTintAlpha) + glowB * localTintAlpha).round();
         final basePixel = baseImage.getPixel(x, y);
         final baseR = basePixel.r;
         final baseG = basePixel.g;
         final baseB = basePixel.b;
-        final overlayR = isEdge ? glowR : tintR;
-        final overlayG = isEdge ? glowG : tintG;
-        final overlayB = isEdge ? glowB : tintB;
+        final overlayR = isEdgeStrong ? glowR : tintR;
+        final overlayG = isEdgeStrong ? glowG : tintG;
+        final overlayB = isEdgeStrong ? glowB : tintB;
         final t = alpha / 255.0;
         final outR = (baseR * (1 - t) + overlayR * t).round();
         final outG = (baseG * (1 - t) + overlayG * t).round();
