@@ -111,7 +111,8 @@ class InpaintingPipeline {
 
     if (!update.added) {
       return RefinementStatus(
-        message: 'This ${isPositive ? 'positive' : 'negative'} point is already added.',
+        message:
+            'This ${isPositive ? 'positive' : 'negative'} point is already added.',
       );
     }
 
