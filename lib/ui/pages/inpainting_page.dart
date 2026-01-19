@@ -2,19 +2,24 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
-import '../widgets/mask_painter.dart';
+import '../widgets/inpainting_action_bar.dart';
+import '../widgets/inpainting_background.dart';
+import '../widgets/inpainting_empty_state.dart';
+import '../widgets/inpainting_header.dart';
+import '../widgets/inpainting_image_stack.dart';
 import '../../services/image_service.dart';
-import '../../services/inpainting_service.dart';
-import '../../services/segmentation_service.dart';
 import '../../services/execution_provider.dart';
 import '../../utils/app_logger.dart';
 import '../../utils/image_utils.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:vector_math/vector_math_64.dart' show Matrix4;
+import 'inpainting_session_state.dart';
+import 'inpainting_controller.dart';
+import 'model_info.dart';
+import 'inpainting_types.dart';
 
 class InpaintingPage extends StatefulWidget {
   const InpaintingPage({super.key});
@@ -23,162 +28,55 @@ class InpaintingPage extends StatefulWidget {
   State<InpaintingPage> createState() => _InpaintingPageState();
 }
 
-class _InpaintingPageState extends State<InpaintingPage> {
-  File? _imageFile;
-  img.Image? _maskImage;
-  int? _imageWidth;
-  int? _imageHeight;
-  Uint8List? _previewMaskBytes;
-  Uint8List? _segmentationMask;
-  Uint8List? _outputBytes;
-  final List<Offset> _points = [];
+class _InpaintingPageState extends State<InpaintingPage>
+    with SingleTickerProviderStateMixin {
+  final InpaintingController _controller = InpaintingController();
   final GlobalKey _imageKey = GlobalKey();
   final GlobalKey _interactiveViewerKey = GlobalKey();
   final TransformationController _transformationController =
       TransformationController();
-  InteractionMode _mode = InteractionMode.point;
-  Offset? _lastTapImagePoint;
-  Rect? _bbox;
-  Size? _canvasSize;
-  Float32List? _lowResMaskInput;
-  Rect? _segmentationImageRect;
-  final List<Offset> _positivePoints = [];
-  final List<Offset> _negativePoints = [];
-  SegmentationPointMode _pointMode = SegmentationPointMode.positive;
-  bool _isSegmentationInProgress = false;
-  SegmentationPrecision _segmentationPrecision = SegmentationPrecision.fp32;
-  InpaintingModel _inpaintingModel = InpaintingModel.fp32;
-  ExecutionProvider _executionProvider = ExecutionProvider.auto;
+  InpaintingSessionState get _session => _controller.session;
+  late final AnimationController _maskPulseController;
+  late final Animation<double> _maskPulse;
+  Offset? _tapDownGlobal;
+  DateTime? _tapDownTime;
 
   static const double _baseBrushSceneWidth = 20.0;
-  bool get _hasManualDrawing => _points.any((offset) => offset.isFinite);
-
-  String get _segmentationModelName {
-    switch (_segmentationPrecision) {
-      case SegmentationPrecision.fp32:
-        return 'mobileSAM_fp32';
-      case SegmentationPrecision.fp16:
-        return 'mobileSAM_fp16';
-      case SegmentationPrecision.int8Dynamic:
-        return 'mobileSAM_int8_dynamic';
-      case SegmentationPrecision.int8Static:
-        return 'mobileSAM_int8_static';
-      case SegmentationPrecision.pruned012:
-        return 'mobileSAM_pruned_012';
-      case SegmentationPrecision.pruned025:
-        return 'mobileSAM_pruned_025';
-      case SegmentationPrecision.pruned040:
-        return 'mobileSAM_pruned_040';
-      case SegmentationPrecision.pruned054:
-        return 'mobileSAM_pruned_054';
-    }
-  }
-
-  String get _segmentationQuantizationType {
-    switch (_segmentationPrecision) {
-      case SegmentationPrecision.fp32:
-        return 'fp32';
-      case SegmentationPrecision.fp16:
-        return 'fp16';
-      case SegmentationPrecision.int8Dynamic:
-        return 'int8_dynamic';
-      case SegmentationPrecision.int8Static:
-        return 'int8_static';
-      case SegmentationPrecision.pruned012:
-        return 'pruned_012';
-      case SegmentationPrecision.pruned025:
-        return 'pruned_025';
-      case SegmentationPrecision.pruned040:
-        return 'pruned_040';
-      case SegmentationPrecision.pruned054:
-        return 'pruned_054';
-    }
-  }
-
-  String get _segmentationEncoderAsset {
-    switch (_segmentationPrecision) {
-      case SegmentationPrecision.fp32:
-        return 'assets/encoder_best.onnx';
-      case SegmentationPrecision.fp16:
-        return 'assets/encoder_best_fp16.onnx';
-      case SegmentationPrecision.int8Dynamic:
-        return 'assets/encoder_best_int8_dynamic.onnx';
-      case SegmentationPrecision.int8Static:
-        return 'assets/encoder_best_int8_static.onnx';
-      case SegmentationPrecision.pruned012:
-        return 'assets/encoder_best_pruned_012.onnx';
-      case SegmentationPrecision.pruned025:
-        return 'assets/encoder_best_pruned_025.onnx';
-      case SegmentationPrecision.pruned040:
-        return 'assets/encoder_best_pruned_040.onnx';
-      case SegmentationPrecision.pruned054:
-        return 'assets/encoder_best_pruned_054.onnx';
-    }
-  }
-
-  String get _segmentationDecoderAsset {
-    switch (_segmentationPrecision) {
-      case SegmentationPrecision.fp32:
-        return 'assets/decoder_best.onnx';
-      case SegmentationPrecision.fp16:
-        return 'assets/decoder_best_fp16.onnx';
-      case SegmentationPrecision.int8Dynamic:
-        return 'assets/decoder_best_int8_dynamic.onnx';
-      case SegmentationPrecision.int8Static:
-        return 'assets/decoder_best_int8_static.onnx';
-      case SegmentationPrecision.pruned012:
-      case SegmentationPrecision.pruned025:
-      case SegmentationPrecision.pruned040:
-      case SegmentationPrecision.pruned054:
-        return 'assets/decoder_best.onnx';
-    }
-  }
-
-  String get _inpaintingModelAsset {
-    switch (_inpaintingModel) {
-      case InpaintingModel.fp32:
-        return 'assets/migan.onnx';
-      case InpaintingModel.fp16:
-        return 'assets/migan_mixed_fp16.onnx';
-      case InpaintingModel.int8Dynamic:
-        return 'assets/migan_int8_quant.onnx';
-      case InpaintingModel.int8Static:
-        return 'assets/migan_int8_quant_static.onnx';
-    }
-  }
-
-  String get _inpaintingModelName {
-    switch (_inpaintingModel) {
-      case InpaintingModel.fp32:
-        return 'migan_fp32';
-      case InpaintingModel.fp16:
-        return 'migan_fp16';
-      case InpaintingModel.int8Dynamic:
-        return 'migan_int8_dynamic';
-      case InpaintingModel.int8Static:
-        return 'migan_int8_static';
-    }
-  }
-
-  String get _inpaintingQuantizationType {
-    switch (_inpaintingModel) {
-      case InpaintingModel.fp32:
-        return 'fp32';
-      case InpaintingModel.fp16:
-        return 'fp16';
-      case InpaintingModel.int8Dynamic:
-        return 'int8_dynamic';
-      case InpaintingModel.int8Static:
-        return 'int8_static';
-    }
-  }
+  bool get _hasManualDrawing => _session.hasManualDrawing;
 
   String get _executionProviderLabel {
-    return executionProviderLabel(_executionProvider);
+    return executionProviderLabel(_controller.executionProvider);
   }
 
   String get _executionProviderValue {
-    return executionProviderValue(_executionProvider);
+    return executionProviderValue(_controller.executionProvider);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _maskPulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    );
+    _maskPulse = CurvedAnimation(
+      parent: _maskPulseController,
+      curve: Curves.easeInOut,
+    );
+    _maskPulseController.repeat(reverse: true);
+  }
+
+  void _updateMaskPulse() {
+    final shouldPulse = !_controller.isSegmentationInProgress && !_controller.isInpaintingInProgress;
+    if (shouldPulse) {
+      if (!_maskPulseController.isAnimating) {
+        _maskPulseController.repeat(reverse: true);
+      }
+    } else {
+      if (_maskPulseController.isAnimating) {
+        _maskPulseController.stop();
+      }
+    }
   }
 
   Future<void> _pickImage() async {
@@ -203,11 +101,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
         quality: 100,
         name: "inpainted_${DateTime.now().millisecondsSinceEpoch}.png",
       );
-      if (result['isSuccess'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Image saved to gallery')),
-        );
-      } else {
+      if (result['isSuccess'] != true) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Error saving image to gallery')),
         );
@@ -242,45 +136,22 @@ class _InpaintingPageState extends State<InpaintingPage> {
     final blank = _createBlankMaskImage(resized.width, resized.height);
 
     _transformationController.value = Matrix4.identity();
-    setState(() {
-      _imageFile = tempFile;
-      _imageWidth = resized.width;
-      _imageHeight = resized.height;
-
-      _outputBytes = null;
-      _previewMaskBytes = null;
-      _segmentationMask = null;
-      _maskImage = blank;
-      _points.clear();
-      _lastTapImagePoint = null;
-      _bbox = null;
-      _canvasSize = null;
-      _mode = InteractionMode.point;
-      _lowResMaskInput = null;
-      _segmentationImageRect = null;
-      _positivePoints.clear();
-      _negativePoints.clear();
-      _pointMode = SegmentationPointMode.positive;
-      _isSegmentationInProgress = false;
-    });
+    _controller.resetSessionWithFlags(
+      tempFile: tempFile,
+      resized: resized,
+      blankMask: blank,
+    );
+    _updateMaskPulse();
   }
 
   Future<void> _runSegmentationFromClick(Offset point) async {
-    if (_imageFile == null || _isSegmentationInProgress) {
-      if (_imageFile == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text(".")),
-        );
-      }
+    if (_session.image.file == null || _controller.isSegmentationInProgress) {
       return;
     }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Starting segmentation from point...")),
-    );
     AppLogger.log('Segmentation from point requested: $point');
 
-    _isSegmentationInProgress = true;
+    _controller.setSegmentationInProgress(true);
+    _updateMaskPulse();
     try {
       final segmentationStart = DateTime.now();
       FirebaseAnalytics.instance.logEvent(
@@ -313,9 +184,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
           'segmentation_duration_ms': durationMs,
           'encoder_inference_ms': result.encoderInferenceMs,
           'decoder_inference_ms': result.decoderInferenceMs,
-          'model': _segmentationModelName,
-          'quantization': _segmentationQuantizationType,
-          'environment': SegmentationService.lastExecutionProvider,
+          'model': _controller.segmentationPrecision.modelName,
+          'quantization': _controller.segmentationPrecision.quantizationType,
+          'environment': _controller.lastSegmentationExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -324,23 +195,22 @@ class _InpaintingPageState extends State<InpaintingPage> {
         'Segmentation from bbox completed in ${durationMs}ms '
         'encoder=${result.encoderInferenceMs}ms '
         'decoder=${result.decoderInferenceMs}ms '
-        'model=$_segmentationModelName '
-        'quantization=$_segmentationQuantizationType '
-        'env=${SegmentationService.lastExecutionProvider}',
+        'model=${_controller.segmentationPrecision.modelName} '
+        'quantization=${_controller.segmentationPrecision.quantizationType} '
+        'env=${_controller.lastSegmentationExecutionProvider}',
       );
 
       await _applySegmentationResult(result);
       if (!mounted) return;
-      setState(() {
-        _positivePoints
+      _controller.update(() {
+        _session.interaction.positivePoints
           ..clear()
           ..addAll(newPositive);
-        _negativePoints.clear();
-        _segmentationImageRect = null;
-        _points.clear();
-        _lastTapImagePoint = null;
-        _bbox = null;
-        _pointMode = SegmentationPointMode.positive;
+        _session.interaction.negativePoints.clear();
+        _session.segmentation.segmentationImageRect = null;
+        _session.interaction.points.clear();
+        _session.interaction.lastTapImagePoint = null;
+        _session.interaction.pointMode = SegmentationPointMode.positive;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -353,7 +223,8 @@ class _InpaintingPageState extends State<InpaintingPage> {
         SnackBar(content: Text('Segmentation failed: $error')),
       );
     } finally {
-      if (mounted) setState(() => _isSegmentationInProgress = false);
+      if (mounted) _controller.setSegmentationInProgress(false);
+      _updateMaskPulse();
     }
   }
 
@@ -364,23 +235,23 @@ class _InpaintingPageState extends State<InpaintingPage> {
   }
 
   void _clearManualMask() {
-    if (_imageWidth == null || _imageHeight == null) return;
-    setState(() {
-      _points.clear();
-      _bbox = null;
-      if (_segmentationMask != null) {
-        _maskImage = img.decodeImage(_segmentationMask!)!;
+    if (_session.image.width == null || _session.image.height == null) return;
+    _controller.update(() {
+      _session.interaction.points.clear();
+      if (_session.mask.segmentationBytes != null) {
+        _session.mask.image = img.decodeImage(_session.mask.segmentationBytes!)!;
       } else {
-        _maskImage = _createBlankMaskImage(_imageWidth!, _imageHeight!);
+        _session.mask.image =
+            _createBlankMaskImage(_session.image.width!, _session.image.height!);
       }
     });
   }
 
   Future<void> _runSegmentationFromBbox(Rect bbox) async {
-    if (_imageFile == null || _isSegmentationInProgress) return;
+    if (_session.image.file == null || _controller.isSegmentationInProgress) return;
     AppLogger.log('Segmentation from bbox requested: $bbox');
 
-    _isSegmentationInProgress = true;
+    _controller.setSegmentationInProgress(true);
     try {
       final segmentationStart = DateTime.now();
       FirebaseAnalytics.instance.logEvent(
@@ -412,9 +283,9 @@ class _InpaintingPageState extends State<InpaintingPage> {
           'segmentation_duration_ms': durationMs,
           'encoder_inference_ms': result.encoderInferenceMs,
           'decoder_inference_ms': result.decoderInferenceMs,
-          'model': _segmentationModelName,
-          'quantization': _segmentationQuantizationType,
-          'environment': SegmentationService.lastExecutionProvider,
+          'model': _controller.segmentationPrecision.modelName,
+          'quantization': _controller.segmentationPrecision.quantizationType,
+          'environment': _controller.lastSegmentationExecutionProvider,
           'device': AppLogger.deviceInfo,
           'os_version': AppLogger.osVersion,
         },
@@ -425,13 +296,12 @@ class _InpaintingPageState extends State<InpaintingPage> {
 
       await _applySegmentationResult(result);
       if (!mounted) return;
-      setState(() {
-        _positivePoints.clear();
-        _negativePoints.clear();
-        _segmentationImageRect = bbox;
-        _points.clear();
-        _bbox = null;
-        _pointMode = SegmentationPointMode.positive;
+      _controller.update(() {
+        _session.interaction.positivePoints.clear();
+        _session.interaction.negativePoints.clear();
+        _session.segmentation.segmentationImageRect = bbox;
+        _session.interaction.points.clear();
+        _session.interaction.pointMode = SegmentationPointMode.positive;
       });
     } catch (error, stackTrace) {
       AppLogger.error(
@@ -444,176 +314,86 @@ class _InpaintingPageState extends State<InpaintingPage> {
         SnackBar(content: Text('Segmentation failed: $error')),
       );
     } finally {
-      if (mounted) setState(() => _isSegmentationInProgress = false);
+      if (mounted) _controller.setSegmentationInProgress(false);
+      _updateMaskPulse();
     }
   }
 
-  Future<SegmentationResult> _callSegmentation({
+  Future<dynamic> _callSegmentation({
     required Rect? bbox,
     required List<Offset> positivePoints,
     required List<Offset> negativePoints,
     required Float32List? lowResMask,
   }) async {
-    final encoderData = await rootBundle.load(_segmentationEncoderAsset);
-    final decoderData = await rootBundle.load(_segmentationDecoderAsset);
-
-    return SegmentationService.segmentWithPoints(
-      imageFile: _imageFile!,
-      bboxPx: bbox,
-      positivePoints: List<Offset>.from(positivePoints),
-      negativePoints: List<Offset>.from(negativePoints),
-      lowResMaskInput: lowResMask,
-      encoderData: encoderData,
-      decoderData: decoderData,
+    return _controller.callSegmentation(
+      bbox: bbox,
+      positivePoints: positivePoints,
+      negativePoints: negativePoints,
+      lowResMask: lowResMask,
     );
   }
 
-  Future<_SegmentationVisuals> _prepareSegmentationVisuals(
-      SegmentationResult result) async {
-    final imageBytes = await _imageFile!.readAsBytes();
-    final baseImage = img.decodeImage(imageBytes)!;
-    final decodedMask = img.decodeImage(result.maskBytes)!;
-    final overlay = _composeOverlay(baseImage, decodedMask);
-    return _SegmentationVisuals(
-      maskBytes: result.maskBytes,
-      maskImage: decodedMask,
-      overlayBytes: Uint8List.fromList(img.encodePng(overlay)),
-      lowResMask: result.lowResMask,
-    );
-  }
-
-  Future<void> _applySegmentationResult(SegmentationResult result) async {
-    final visuals = await _prepareSegmentationVisuals(result);
-    if (!mounted) return;
-    setState(() {
-      _segmentationMask = visuals.maskBytes;
-      _maskImage = visuals.maskImage;
-      _previewMaskBytes = visuals.overlayBytes;
-      _lowResMaskInput = visuals.lowResMask;
-    });
-  }
-
-  img.Image _composeOverlay(img.Image baseImage, img.Image mask) {
-    final overlay = img.Image.from(baseImage);
-    for (int y = 0; y < overlay.height; y++) {
-      for (int x = 0; x < overlay.width; x++) {
-        final value = mask.getPixel(x, y).r;
-        if (value == 0) {
-          overlay.setPixelRgba(x, y, 0, 255, 0, 120);
-        }
-      }
-    }
-    return overlay;
+  Future<void> _applySegmentationResult(dynamic result) async {
+    await _controller.applySegmentationResult(result);
   }
 
   Future<void> _refineSegmentation(Offset point) async {
-    if (_imageFile == null ||
-        _segmentationMask == null ||
-        _isSegmentationInProgress) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Refinement skipped because segmentation mask is unavailable.'),
-        ),
-      );
+    if (_session.image.file == null ||
+        _session.mask.segmentationBytes == null ||
+        _controller.isSegmentationInProgress) {
       return;
     }
-    final lowRes = _lowResMaskInput;
-    if (lowRes == null) {
-      AppLogger.log(
-          'Refinement skipped because low-res mask is unavailable for point $point');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-              'Refinement skipped because low-res mask is unavailable for point $point'),
-        ),
-      );
-      return;
-    }
-
-    final isPositive = _pointMode == SegmentationPointMode.positive;
+    final isPositive =
+        _session.interaction.pointMode == SegmentationPointMode.positive;
     AppLogger.log(
         'Refining segmentation with ${isPositive ? 'positive' : 'negative'} point: $point');
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-            'Refining segmentation with ${isPositive ? 'positive' : 'negative'} point: $point'),
-      ),
+    final previousPositive =
+        List<Offset>.from(_session.interaction.positivePoints);
+    final previousNegative =
+        List<Offset>.from(_session.interaction.negativePoints);
+    final refinement = _controller.validateRefinement(
+      lowResMask: _session.segmentation.lowResMaskInput,
+      isPositive: isPositive,
+      point: point,
+      positivePoints: _session.interaction.positivePoints,
+      negativePoints: _session.interaction.negativePoints,
     );
 
-    final previousPositive = List<Offset>.from(_positivePoints);
-    final previousNegative = List<Offset>.from(_negativePoints);
-    final updatedPositive = List<Offset>.from(_positivePoints);
-    final updatedNegative = List<Offset>.from(_negativePoints);
-
-    bool added = false;
-    if (isPositive) {
-      if (!updatedPositive.contains(point)) {
-        updatedPositive.add(point);
-        added = true;
-      }
-    } else {
-      if (!updatedNegative.contains(point)) {
-        updatedNegative.add(point);
-        added = true;
-      }
-    }
-
-    if (!added) {
+    if (refinement.message != null) {
+      AppLogger.log(refinement.message!);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'This ${isPositive ? 'positive' : 'negative'} point is already added.',
-          ),
-        ),
-      );
       return;
     }
+    final update = refinement.update!;
 
     if (mounted) {
-      setState(() {
-        _isSegmentationInProgress = true;
-        _positivePoints
+      _controller.update(() {
+        _controller.isSegmentationInProgress = true;
+        _session.interaction.positivePoints
           ..clear()
-          ..addAll(updatedPositive);
-        _negativePoints
+          ..addAll(update.positivePoints);
+        _session.interaction.negativePoints
           ..clear()
-          ..addAll(updatedNegative);
+          ..addAll(update.negativePoints);
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Added ${isPositive ? 'positive' : 'negative'} point at '
-            '(${point.dx.toStringAsFixed(1)}, ${point.dy.toStringAsFixed(1)})',
-          ),
-        ),
-      );
+      _updateMaskPulse();
     }
 
     try {
-      final result = await _callSegmentation(
-        bbox: _segmentationImageRect,
-        positivePoints: updatedPositive,
-        negativePoints: updatedNegative,
-        lowResMask: lowRes,
+      final result = await _controller.refineSegmentation(
+        segmentationImageRect: _session.segmentation.segmentationImageRect,
+        positivePoints: update.positivePoints,
+        negativePoints: update.negativePoints,
+        lowResMask: _session.segmentation.lowResMaskInput!,
       );
       await _applySegmentationResult(result);
       if (!mounted) return;
-      setState(() {
-        _lastTapImagePoint = null;
-        _isSegmentationInProgress = false;
+      _controller.update(() {
+        _session.interaction.lastTapImagePoint = null;
+        _controller.isSegmentationInProgress = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            isPositive
-                ? 'Positive point applied to mask'
-                : 'Negative point applied to mask',
-          ),
-        ),
-      );
+      _updateMaskPulse();
     } catch (error, stackTrace) {
       AppLogger.error(
         'Segmentation refinement failed',
@@ -621,15 +401,16 @@ class _InpaintingPageState extends State<InpaintingPage> {
         stackTrace,
       );
       if (!mounted) return;
-      setState(() {
-        _positivePoints
+      _controller.update(() {
+        _session.interaction.positivePoints
           ..clear()
           ..addAll(previousPositive);
-        _negativePoints
+        _session.interaction.negativePoints
           ..clear()
           ..addAll(previousNegative);
-        _isSegmentationInProgress = false;
+        _controller.isSegmentationInProgress = false;
       });
+      _updateMaskPulse();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Refinement failed: $error')),
       );
@@ -639,7 +420,7 @@ class _InpaintingPageState extends State<InpaintingPage> {
   Offset? _globalToScene(Offset globalPosition) {
     final renderBox =
         _interactiveViewerKey.currentContext?.findRenderObject() as RenderBox?;
-    final canvasSize = _canvasSize;
+    final canvasSize = _session.canvas.size;
     if (renderBox == null || canvasSize == null) {
       return null;
     }
@@ -666,17 +447,19 @@ class _InpaintingPageState extends State<InpaintingPage> {
     double drawH,
     double brushSceneWidth,
   ) {
-    if (_maskImage == null) return;
+    if (_session.mask.image == null) return;
     final clamped = Offset(
       scenePoint.dx.clamp(0.0, drawW),
       scenePoint.dy.clamp(0.0, drawH),
     );
-    final widthScale = _maskImage!.width / drawW;
-    final heightScale = _maskImage!.height / drawH;
-    final centerX =
-        (clamped.dx * widthScale).round().clamp(0, _maskImage!.width - 1);
-    final centerY =
-        (clamped.dy * heightScale).round().clamp(0, _maskImage!.height - 1);
+    final widthScale = _session.mask.image!.width / drawW;
+    final heightScale = _session.mask.image!.height / drawH;
+    final centerX = (clamped.dx * widthScale)
+        .round()
+        .clamp(0, _session.mask.image!.width - 1);
+    final centerY = (clamped.dy * heightScale)
+        .round()
+        .clamp(0, _session.mask.image!.height - 1);
 
     final brushRadiusScene = math.max(1.0, brushSceneWidth / 2.0);
     final radiusX = math.max(1, (brushRadiusScene * widthScale).round());
@@ -687,22 +470,20 @@ class _InpaintingPageState extends State<InpaintingPage> {
         final normX = dx / radiusX;
         final normY = dy / radiusY;
         if ((normX * normX + normY * normY) > 1.0) continue;
-        final nx = (centerX + dx).clamp(0, _maskImage!.width - 1);
-        final ny = (centerY + dy).clamp(0, _maskImage!.height - 1);
-        _maskImage!.setPixelRgba(nx, ny, 0, 0, 0, 255);
+        final nx = (centerX + dx).clamp(0, _session.mask.image!.width - 1);
+        final ny = (centerY + dy).clamp(0, _session.mask.image!.height - 1);
+        _session.mask.image!.setPixelRgba(nx, ny, 0, 0, 0, 255);
       }
     }
 
-    _points.add(clamped);
-    final newBox = bboxFromPoints(_points);
-    _bbox = newBox.isEmpty ? null : newBox;
+    _session.interaction.points.add(clamped);
   }
 
   Future<void> _onSegmentPressed() async {
-    if (_isSegmentationInProgress) {
+    if (_controller.isSegmentationInProgress) {
       return;
     }
-    if (_imageFile == null) {
+    if (_session.image.file == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("No image selected.")),
       );
@@ -710,49 +491,38 @@ class _InpaintingPageState extends State<InpaintingPage> {
     }
 
     AppLogger.log(
-      'Segment button pressed. mode=$_mode, lastPoint=$_lastTapImagePoint, bbox=$_bbox',
+      'Segment button pressed. interaction.mode=$_session.interaction.mode, lastPoint=$_session.interaction.lastTapImagePoint',
     );
 
-    if (_mode == InteractionMode.point) {
-      if (_lastTapImagePoint == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text(
-                  "Click on the object in the image to start segmentation")),
-        );
+    if (_session.interaction.mode == InteractionMode.point) {
+      if (_session.interaction.lastTapImagePoint == null) {
         return;
       }
-      final point = _lastTapImagePoint!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Segmentation point: $point")),
-      );
+      final point = _session.interaction.lastTapImagePoint!;
       await _runSegmentationFromClick(point);
       return;
     }
 
-    Rect? box = _bbox;
-    if (box == null) {
-      if (_points.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("First draw the mask")),
-        );
-        return;
-      }
-      box = bboxFromPoints(_points);
-      if (box.isEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Failed to determine bbox")),
-        );
-        return;
-      }
+    if (_session.interaction.points.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("First draw the mask")),
+      );
+      return;
+    }
+    final box = bboxFromPoints(_session.interaction.points);
+    if (box.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Failed to determine bbox")),
+      );
+      return;
     }
 
-    final canvasSize = _canvasSize;
+    final canvasSize = _session.canvas.size;
     if (canvasSize == null ||
         canvasSize.width == 0 ||
         canvasSize.height == 0 ||
-        _imageWidth == null ||
-        _imageHeight == null) {
+        _session.image.width == null ||
+        _session.image.height == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Canvas size unavailable for bbox.")),
       );
@@ -766,718 +536,585 @@ class _InpaintingPageState extends State<InpaintingPage> {
       return;
     }
 
-    final scaleX = _imageWidth! / canvasSize.width;
-    final scaleY = _imageHeight! / canvasSize.height;
+    final scaleX = _session.image.width! / canvasSize.width;
+    final scaleY = _session.image.height! / canvasSize.height;
     final imageRect = Rect.fromLTRB(
       ((box.left.clamp(0.0, canvasSize.width)) * scaleX)
-          .clamp(0.0, _imageWidth!.toDouble())
+          .clamp(0.0, _session.image.width!.toDouble())
           .toDouble(),
       ((box.top.clamp(0.0, canvasSize.height)) * scaleY)
-          .clamp(0.0, _imageHeight!.toDouble())
+          .clamp(0.0, _session.image.height!.toDouble())
           .toDouble(),
       ((box.right.clamp(0.0, canvasSize.width)) * scaleX)
-          .clamp(0.0, _imageWidth!.toDouble())
+          .clamp(0.0, _session.image.width!.toDouble())
           .toDouble(),
       ((box.bottom.clamp(0.0, canvasSize.height)) * scaleY)
-          .clamp(0.0, _imageHeight!.toDouble())
+          .clamp(0.0, _session.image.height!.toDouble())
           .toDouble(),
     );
 
-    setState(() {
-      _bbox = box;
-    });
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Segmentation from bbox: $box")),
-    );
     await _runSegmentationFromBbox(imageRect);
   }
 
   Future<void> _runInpainting() async {
-    if (_imageFile == null || _maskImage == null) return;
+    if (_session.image.file == null || _session.mask.image == null) return;
 
-    final inpaintingStart = DateTime.now();
-    FirebaseAnalytics.instance.logEvent(
-      name: 'inpainting_started',
-      parameters: {
-        'width': _imageWidth!,
-        'height': _imageHeight!,
-        'model': _inpaintingModelName,
-        'quantization': _inpaintingQuantizationType,
-        'environment': InpaintingService.lastExecutionProvider,
-        'device': AppLogger.deviceInfo,
-        'os_version': AppLogger.osVersion,
-      },
-    );
+    _controller.setInpaintingInProgress(true);
+    _updateMaskPulse();
 
-    final bytes = await _imageFile!.readAsBytes();
-    final originalImage = img.decodeImage(bytes)!;
+    try {
+      final inpaintingStart = DateTime.now();
+      FirebaseAnalytics.instance.logEvent(
+        name: 'inpainting_started',
+        parameters: {
+          'width': _session.image.width!,
+          'height': _session.image.height!,
+          'model': _controller.inpaintingModel.modelName,
+          'quantization': _controller.inpaintingModel.quantizationType,
+          'environment': _controller.lastInpaintingExecutionProvider,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
+        },
+      );
 
-    if (_segmentationMask != null) {
-      _maskImage = img.decodeImage(_segmentationMask!)!;
+      final bytes = await _session.image.file!.readAsBytes();
+      final originalImage = img.decodeImage(bytes)!;
+
+      if (_session.mask.segmentationBytes != null) {
+        _session.mask.image = img.decodeImage(_session.mask.segmentationBytes!)!;
+      }
+
+      final dilated = dilateMask(_session.mask.image!, radius: 20);
+
+      final output = await _controller.runInpainting(
+        original: originalImage,
+        mask: dilated,
+      );
+
+      FirebaseAnalytics.instance.logEvent(
+        name: 'inpainting_inference',
+        parameters: {
+          'model': _controller.inpaintingModel.modelName,
+          'quantization': _controller.inpaintingModel.quantizationType,
+          'inference_ms': output.inferenceDurationMs,
+          'environment': _controller.lastInpaintingExecutionProvider,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
+        },
+      );
+
+      final inpaintingEnd = DateTime.now();
+      final durationMs =
+          inpaintingEnd.difference(inpaintingStart).inMilliseconds;
+
+      final decoded = img.decodeImage(output.bytes)!;
+      final newTemp =
+          await ImageService.saveTempImage(output.bytes, 'input.png');
+
+      FirebaseAnalytics.instance.logEvent(
+        name: 'inpainting_completed',
+        parameters: {
+          'inpainting_duration_ms': durationMs,
+          'inpainting_inference_ms': output.inferenceDurationMs,
+          'model': _controller.inpaintingModel.modelName,
+          'quantization': _controller.inpaintingModel.quantizationType,
+          'environment': _controller.lastInpaintingExecutionProvider,
+          'device': AppLogger.deviceInfo,
+          'os_version': AppLogger.osVersion,
+        },
+      );
+
+      _startNewEditingSession(resized: decoded, tempFile: newTemp);
+    } finally {
+      _controller.setInpaintingInProgress(false);
+      _updateMaskPulse();
     }
-
-    final modelData = await rootBundle.load(_inpaintingModelAsset);
-
-    final dilated = dilateMask(_maskImage!, radius: 20);
-
-    final output = await InpaintingService.runInpainting(
-      original: originalImage,
-      mask: dilated,
-      modelData: modelData,
-    );
-
-    FirebaseAnalytics.instance.logEvent(
-      name: 'inpainting_inference',
-      parameters: {
-        'model': _inpaintingModelName,
-        'quantization': _inpaintingQuantizationType,
-        'inference_ms': output.inferenceDurationMs,
-        'environment': InpaintingService.lastExecutionProvider,
-        'device': AppLogger.deviceInfo,
-        'os_version': AppLogger.osVersion,
-      },
-    );
-
-    final inpaintingEnd = DateTime.now();
-    final durationMs = inpaintingEnd.difference(inpaintingStart).inMilliseconds;
-
-    final decoded = img.decodeImage(output.bytes)!;
-    final newTemp = await ImageService.saveTempImage(output.bytes, 'input.png');
-
-    FirebaseAnalytics.instance.logEvent(
-      name: 'inpainting_completed',
-      parameters: {
-        'inpainting_duration_ms': durationMs,
-        'inpainting_inference_ms': output.inferenceDurationMs,
-        'model': _inpaintingModelName,
-        'quantization': _inpaintingQuantizationType,
-        'environment': InpaintingService.lastExecutionProvider,
-        'device': AppLogger.deviceInfo,
-        'os_version': AppLogger.osVersion,
-      },
-    );
-
-    _startNewEditingSession(resized: decoded, tempFile: newTemp);
   }
 
-  Widget _buildImageStack() {
-    if (_imageFile == null && _previewMaskBytes == null) {
-      return const Center(child: Text("No image selected"));
+  void _handleTapDown(TapDownDetails details) {
+    _tapDownGlobal = details.globalPosition;
+    _tapDownTime = DateTime.now();
+  }
+
+  void _handleTapCancel() {
+    _tapDownGlobal = null;
+    _tapDownTime = null;
+  }
+
+  Future<void> _handleTapUp(
+    TapUpDetails details,
+    double drawW,
+    double drawH,
+  ) async {
+    const tapMsThreshold = 180;
+    const tapMoveThreshold = 6.0;
+    final downPos = _tapDownGlobal;
+    final downTime = _tapDownTime;
+    _tapDownGlobal = null;
+    _tapDownTime = null;
+    if (downPos == null || downTime == null) return;
+    final elapsedMs = DateTime.now().difference(downTime).inMilliseconds;
+    final moveDistance = (details.globalPosition - downPos).distance;
+    if (moveDistance > tapMoveThreshold) return;
+    if (_session.image.width == null || _session.image.height == null) {
+      return;
+    }
+    if (elapsedMs > tapMsThreshold) {
+      AppLogger.log('Long press detected: ${elapsedMs}ms');
     }
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final maxW = constraints.maxWidth;
-        final maxH = constraints.maxHeight;
+    final scenePoint = _globalToScene(details.globalPosition);
+    final size = _session.canvas.size;
+    if (scenePoint == null || size == null) return;
+    final px = (scenePoint.dx * (_session.image.width! / size.width))
+        .clamp(0.0, _session.image.width!.toDouble());
+    final py = (scenePoint.dy * (_session.image.height! / size.height))
+        .clamp(0.0, _session.image.height!.toDouble());
+    final imagePoint = Offset(px, py);
 
-        final imgW = _imageWidth?.toDouble() ?? 256;
-        final imgH = _imageHeight?.toDouble() ?? 256;
+    AppLogger.log(
+        'Tap on image (scene=$scenePoint → image=$imagePoint) drawSize=($drawW,$drawH)');
 
-        final scale = (maxW / imgW < maxH / imgH) ? maxW / imgW : maxH / imgH;
-        final drawW = imgW * scale;
-        final drawH = imgH * scale;
-        _canvasSize = Size(drawW, drawH);
+    if (_session.mask.segmentationBytes != null) {
+      _refineSegmentation(imagePoint);
+    } else {
+    _controller.update(() {
+      _session.interaction.mode = InteractionMode.point;
+      _session.interaction.lastTapImagePoint = imagePoint;
+    });
+      if (!_controller.isSegmentationInProgress) {
+        await _onSegmentPressed();
+      }
+    }
+  }
 
-        return Center(
-          child: SizedBox(
-            width: drawW,
-            height: drawH,
-            child: InteractiveViewer(
-              key: _interactiveViewerKey,
-              transformationController: _transformationController,
-              minScale: 1.0,
-              maxScale: 5.0,
-              panEnabled: false,
-              clipBehavior: Clip.none,
-              child: ValueListenableBuilder<Matrix4>(
-                valueListenable: _transformationController,
-                builder: (context, value, _) {
-                  final brushSceneWidth = _currentBrushSceneWidth(drawW);
-                  return Stack(
-                    children: [
-                      Positioned.fill(
-                        child: Image(
-                          key: _imageKey,
-                          image: _previewMaskBytes != null
-                              ? MemoryImage(_previewMaskBytes!)
-                              : FileImage(_imageFile!) as ImageProvider,
-                          fit: BoxFit.contain,
-                        ),
-                      ),
-                      Positioned.fill(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTapDown: _mode == InteractionMode.point
-                              ? (details) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content:
-                                          Text("Clicked on image (point)."),
-                                    ),
-                                  );
-                                  if (_imageWidth == null ||
-                                      _imageHeight == null) return;
-                                  final scenePoint =
-                                      _globalToScene(details.globalPosition);
-                                  final size = _canvasSize;
-                                  if (scenePoint == null || size == null)
-                                    return;
-                                  final px = (scenePoint.dx *
-                                          (_imageWidth! / size.width))
-                                      .clamp(0.0, _imageWidth!.toDouble());
-                                  final py = (scenePoint.dy *
-                                          (_imageHeight! / size.height))
-                                      .clamp(0.0, _imageHeight!.toDouble());
-                                  final imagePoint = Offset(px, py);
+  void _handlePanStart(
+    DragStartDetails details,
+    double drawW,
+    double drawH,
+    double brushSceneWidth,
+  ) {
+    final scenePoint = _globalToScene(details.globalPosition);
+    if (scenePoint == null) return;
+    _controller.update(() {
+      _session.interaction.mode = InteractionMode.draw;
+      _session.interaction.lastTapImagePoint = null;
+      _addStrokePoint(
+        scenePoint,
+        drawW,
+        drawH,
+        brushSceneWidth,
+      );
+    });
+  }
 
-                                  AppLogger.log(
-                                      'Tap on image (scene=$scenePoint → image=$imagePoint) drawSize=($drawW,$drawH)');
+  void _handlePanUpdate(
+    DragUpdateDetails details,
+    double drawW,
+    double drawH,
+    double brushSceneWidth,
+  ) {
+    final scenePoint = _globalToScene(details.globalPosition);
+    if (scenePoint == null) return;
+    _controller.update(() {
+      _addStrokePoint(
+        scenePoint,
+        drawW,
+        drawH,
+        brushSceneWidth,
+      );
+    });
+  }
 
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                          "Clicked on image at point: ${imagePoint.dx.toStringAsFixed(1)}, ${imagePoint.dy.toStringAsFixed(1)}"),
-                                    ),
-                                  );
+  Future<void> _handlePanEnd() async {
+    _controller.update(() => _session.interaction.points.add(Offset.infinite));
+    final hasStroke = _session.interaction.points.any((point) => point.isFinite);
+    if (hasStroke && !_controller.isSegmentationInProgress) {
+      await _onSegmentPressed();
+    }
+  }
 
-                                  if (_segmentationMask != null) {
-                                    _refineSegmentation(imagePoint);
-                                  } else {
-                                    setState(() {
-                                      _lastTapImagePoint = imagePoint;
-                                      _bbox = null;
-                                    });
-                                  }
-                                }
-                              : null,
-                          onPanStart: _mode == InteractionMode.draw
-                              ? (details) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text("Clicked on image (draw)."),
-                                    ),
-                                  );
-                                  final scenePoint =
-                                      _globalToScene(details.globalPosition);
-                                  if (scenePoint == null) return;
-                                  setState(() {
-                                    _addStrokePoint(
-                                      scenePoint,
-                                      drawW,
-                                      drawH,
-                                      brushSceneWidth,
-                                    );
-                                  });
-                                }
-                              : null,
-                          onPanUpdate: _mode == InteractionMode.draw
-                              ? (details) {
-                                  final scenePoint =
-                                      _globalToScene(details.globalPosition);
-                                  if (scenePoint == null) return;
-                                  setState(() {
-                                    _addStrokePoint(
-                                      scenePoint,
-                                      drawW,
-                                      drawH,
-                                      brushSceneWidth,
-                                    );
-                                  });
-                                }
-                              : null,
-                          onPanEnd: _mode == InteractionMode.draw
-                              ? (_) {
-                                  setState(() => _points.add(Offset.infinite));
-                                }
-                              : null,
-                          child: CustomPaint(
-                            painter: MaskPainter(
-                              _points,
-                              strokeWidth: brushSceneWidth,
-                            ),
-                            size: Size(drawW, drawH),
-                          ),
-                        ),
-                      ),
-                      if (_bbox != null)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            ignoring: true,
-                            child: CustomPaint(painter: BBoxPainter(_bbox!)),
-                          ),
-                        ),
-                      if ((_positivePoints.isNotEmpty ||
-                              _negativePoints.isNotEmpty) &&
-                          _imageWidth != null &&
-                          _imageHeight != null)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            ignoring: true,
-                            child: CustomPaint(
-                              painter: SegmentationHintsPainter(
-                                positives: _positivePoints,
-                                negatives: _negativePoints,
-                                imageSize: Size(_imageWidth!.toDouble(),
-                                    _imageHeight!.toDouble()),
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (_lastTapImagePoint != null)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            ignoring: true,
-                            child: CustomPaint(
-                              painter: SquarePointPainter(
-                                point: _lastTapImagePoint!,
-                                imageSize: Size(_imageWidth!.toDouble(),
-                                    _imageHeight!.toDouble()),
-                                size: 16.0,
-                                color: Colors.blueAccent,
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
-                  );
-                },
-              ),
+  @override
+  void dispose() {
+    _maskPulseController.dispose();
+    _transformationController.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Future<void> _saveCurrentImage() async {
+    if (_session.image.file == null) return;
+    final bytes = await _session.image.file!.readAsBytes();
+    await _saveImageToGallery(bytes);
+  }
+
+  Future<void> _selectSegmentationPrecision() async {
+    final precision = await showModalBottomSheet<SegmentationPrecision>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ListTile(
+                  title: Text('MobileSAM (full)'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.memory),
+                  title: const Text('MobileSAM FP32'),
+                  subtitle: const Text('Highest precision, largest model'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.fp32,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.blur_on),
+                  title: const Text('MobileSAM FP16'),
+                  subtitle: const Text('Half precision, balance speed/quality'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.fp16,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.speed),
+                  title: const Text('MobileSAM INT8 (dynamic quant)'),
+                  subtitle: const Text('Smaller model, dynamic calibration'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.int8Dynamic,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.flash_on),
+                  title: const Text('MobileSAM INT8 (static quant)'),
+                  subtitle: const Text('Static calibration, fastest option'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.int8Static,
+                  ),
+                ),
+                const ListTile(
+                  title: Text('MobileSAM (pruned encoder)'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.crop),
+                  title: const Text('MobileSAM FP32 pruned 12'),
+                  subtitle: const Text('Smallest encoder (pruned 12%)'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.pruned012,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.crop),
+                  title: const Text('MobileSAM FP32 pruned 25'),
+                  subtitle: const Text('Pruned encoder (25%)'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.pruned025,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.crop),
+                  title: const Text('MobileSAM FP32 pruned 40'),
+                  subtitle: const Text('Pruned encoder (40%)'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.pruned040,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.crop),
+                  title: const Text('MobileSAM FP32 pruned 54'),
+                  subtitle: const Text('Pruned encoder (54%)'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    SegmentationPrecision.pruned054,
+                  ),
+                ),
+              ],
             ),
           ),
         );
       },
     );
+    if (precision != null) {
+      _controller.setSegmentationPrecision(precision);
+      FirebaseAnalytics.instance.logEvent(
+        name: 'segmentation_precision_selected',
+        parameters: {
+          'model': _controller.segmentationPrecision.modelName,
+          'quantization': _controller.segmentationPrecision.quantizationType,
+        },
+      );
+      AppLogger.log('Segmentation precision changed to $precision');
+    }
   }
 
-  @override
-  void dispose() {
-    _transformationController.dispose();
-    super.dispose();
-  }
-
-  Widget _buildFloatingButtons() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          FloatingActionButton(
-            onPressed: _pickImage,
-            heroTag: 'pick',
-            child: const Icon(Icons.photo_library),
-          ),
-          const SizedBox(width: 12),
-          FloatingActionButton(
-            onPressed: _pickImageFromCamera,
-            heroTag: 'camera',
-            tooltip: 'Take a photo',
-            child: const Icon(Icons.camera_alt),
-          ),
-          const SizedBox(width: 12),
-          FloatingActionButton(
-            onPressed: _runInpainting,
-            heroTag: 'inpaint',
-            child: const Icon(Icons.auto_fix_high),
-          ),
-          const SizedBox(width: 12),
-          FloatingActionButton(
-            onPressed: _imageFile == null
-                ? null
-                : () async {
-                    final bytes = await _imageFile!.readAsBytes();
-                    await _saveImageToGallery(bytes);
-                  },
-            heroTag: 'save',
-            tooltip: 'Save to gallery',
-            child: const Icon(Icons.save_alt),
-          ),
-          const SizedBox(width: 12),
-          FloatingActionButton(
-            onPressed: () {
-              setState(() {
-                _mode = _mode == InteractionMode.draw
-                    ? InteractionMode.point
-                    : InteractionMode.draw;
-                if (_mode == InteractionMode.draw) {
-                  _lastTapImagePoint = null;
-                }
-              });
-            },
-            heroTag: 'mode',
-            child: Icon(
-                _mode == InteractionMode.draw ? Icons.brush : Icons.touch_app),
-          ),
-          const SizedBox(width: 12),
-          FloatingActionButton(
-            onPressed: _isSegmentationInProgress ? null : _onSegmentPressed,
-            heroTag: 'segment',
-            child: const Icon(Icons.crop_square),
-          ),
-          const SizedBox(width: 12),
-          FloatingActionButton(
-            onPressed: () async {
-              final precision =
-                  await showModalBottomSheet<SegmentationPrecision>(
-                context: context,
-                builder: (context) {
-                  return SafeArea(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const ListTile(
-                            title: Text('MobileSAM (full)'),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.memory),
-                            title: const Text('MobileSAM FP32'),
-                            subtitle: const Text(
-                                'Highest precision, largest model'),
-                            onTap: () => Navigator.pop(
-                              context,
-                              SegmentationPrecision.fp32,
-                            ),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.blur_on),
-                            title: const Text('MobileSAM FP16'),
-                            subtitle: const Text(
-                                'Half precision, balance speed/quality'),
-                            onTap: () => Navigator.pop(
-                              context,
-                              SegmentationPrecision.fp16,
-                            ),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.speed),
-                            title:
-                                const Text('MobileSAM INT8 (dynamic quant)'),
-                            subtitle: const Text(
-                                'Smaller model, dynamic calibration'),
-                            onTap: () => Navigator.pop(
-                              context,
-                              SegmentationPrecision.int8Dynamic,
-                            ),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.flash_on),
-                            title:
-                                const Text('MobileSAM INT8 (static quant)'),
-                            subtitle: const Text(
-                                'Static calibration, fastest option'),
-                            onTap: () => Navigator.pop(
-                              context,
-                              SegmentationPrecision.int8Static,
-                            ),
-                          ),
-                          const ListTile(
-                            title: Text('MobileSAM (pruned encoder)'),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.crop),
-                            title: const Text('MobileSAM FP32 pruned 12'),
-                            subtitle:
-                                const Text('Smallest encoder (pruned 12%)'),
-                            onTap: () => Navigator.pop(
-                              context,
-                              SegmentationPrecision.pruned012,
-                            ),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.crop),
-                            title: const Text('MobileSAM FP32 pruned 25'),
-                            subtitle: const Text('Pruned encoder (25%)'),
-                            onTap: () => Navigator.pop(
-                              context,
-                              SegmentationPrecision.pruned025,
-                            ),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.crop),
-                            title: const Text('MobileSAM FP32 pruned 40'),
-                            subtitle: const Text('Pruned encoder (40%)'),
-                            onTap: () => Navigator.pop(
-                              context,
-                              SegmentationPrecision.pruned040,
-                            ),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.crop),
-                            title: const Text('MobileSAM FP32 pruned 54'),
-                            subtitle: const Text('Pruned encoder (54%)'),
-                            onTap: () => Navigator.pop(
-                              context,
-                              SegmentationPrecision.pruned054,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-              if (precision != null) {
-                setState(() {
-                  _segmentationPrecision = precision;
-                });
-                FirebaseAnalytics.instance.logEvent(
-                  name: 'segmentation_precision_selected',
-                  parameters: {
-                    'model': _segmentationModelName,
-                    'quantization': _segmentationQuantizationType,
-                  },
-                );
-                AppLogger.log(
-                  'Segmentation precision changed to $precision',
-                );
-              }
-            },
-            heroTag: 'backend',
-            tooltip: 'Choose MobileSAM model',
-            child: const Icon(Icons.tune),
-          ),
-          const SizedBox(width: 12),
-          FloatingActionButton(
-            onPressed: () async {
-              final provider = await showModalBottomSheet<ExecutionProvider>(
-                context: context,
-                builder: (context) {
-                  return SafeArea(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const ListTile(
-                            title: Text('Execution environment'),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.auto_mode),
-                            title: const Text('Auto (CoreML > CPU)'),
-                            subtitle: const Text(
-                                'Try CoreML first, fallback to CPU'),
-                            onTap: () => Navigator.pop(
-                              context,
-                              ExecutionProvider.auto,
-                            ),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.memory),
-                            title: const Text('CPU only'),
-                            subtitle:
-                                const Text('Disable hardware acceleration'),
-                            onTap: () => Navigator.pop(
-                              context,
-                              ExecutionProvider.cpu,
-                            ),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.developer_board),
-                            title: const Text('CoreML only'),
-                            subtitle: const Text(
-                                'Force CoreML (fallback if unsupported)'),
-                            onTap: () => Navigator.pop(
-                              context,
-                              ExecutionProvider.coreml,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-
-              if (provider != null) {
-                setState(() {
-                  _executionProvider = provider;
-                });
-                SegmentationService.preferredExecutionProvider = provider;
-                InpaintingService.preferredExecutionProvider = provider;
-                FirebaseAnalytics.instance.logEvent(
-                  name: 'execution_provider_selected',
-                  parameters: {
-                    'provider': _executionProviderValue,
-                  },
-                );
-                AppLogger.log(
-                    'Execution provider changed to $_executionProviderValue');
-              }
-            },
-            heroTag: 'executionProvider',
-            tooltip: 'Execution environment: $_executionProviderLabel',
-            child: const Icon(Icons.computer),
-          ),
-          const SizedBox(width: 12),
-          FloatingActionButton(
-            onPressed: () async {
-              final model = await showModalBottomSheet<InpaintingModel>(
-                context: context,
-                builder: (context) {
-                  return SafeArea(
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          ListTile(
-                            leading: const Icon(Icons.memory),
-                            title: const Text('MI-GAN FP32'),
-                            subtitle:
-                                const Text('Higher precision, larger model'),
-                            onTap: () =>
-                                Navigator.pop(context, InpaintingModel.fp32),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.blur_on),
-                            title: const Text('MI-GAN FP16'),
-                            subtitle: const Text(
-                                'Half precision mixed model, balance speed/quality'),
-                            onTap: () =>
-                                Navigator.pop(context, InpaintingModel.fp16),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.speed),
-                            title: const Text('MI-GAN INT8 (dynamic quant)'),
-                            subtitle: const Text(
-                                'Smaller quantized model, dynamic calibration (may be slower)'),
-                            onTap: () => Navigator.pop(
-                                context, InpaintingModel.int8Dynamic),
-                          ),
-                          ListTile(
-                            leading: const Icon(Icons.flash_on),
-                            title: const Text('MI-GAN INT8 (static quant)'),
-                            subtitle: const Text(
-                                'Static calibration, fastest quantized option'),
-                            onTap: () => Navigator.pop(
-                                context, InpaintingModel.int8Static),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-              if (model != null) {
-                setState(() {
-                  _inpaintingModel = model;
-                });
-                FirebaseAnalytics.instance.logEvent(
-                  name: 'inpainting_model_selected',
-                  parameters: {
-                    'model': _inpaintingModelName,
-                    'quantization': _inpaintingQuantizationType,
-                  },
-                );
-                AppLogger.log('Inpainting model changed to $model');
-              }
-            },
-            heroTag: 'inpaintingModel',
-            tooltip: 'Choose MI-GAN model',
-            child: const Icon(Icons.swap_vert),
-          ),
-          if (_mode == InteractionMode.point && _segmentationMask != null) ...[
-            const SizedBox(width: 12),
-            FloatingActionButton.small(
-              onPressed: _isSegmentationInProgress
-                  ? null
-                  : () {
-                      setState(
-                        () => _pointMode = SegmentationPointMode.positive,
-                      );
-                    },
-              heroTag: 'positiveHint',
-              backgroundColor: _pointMode == SegmentationPointMode.positive
-                  ? Colors.green
-                  : null,
-              child: const Icon(Icons.add_circle),
+  Future<void> _selectExecutionProvider() async {
+    final provider = await showModalBottomSheet<ExecutionProvider>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ListTile(
+                  title: Text('Execution environment'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.auto_mode),
+                  title: const Text('Auto (CoreML > CPU)'),
+                  subtitle: const Text('Try CoreML first, fallback to CPU'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    ExecutionProvider.auto,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.memory),
+                  title: const Text('CPU only'),
+                  subtitle: const Text('Disable hardware acceleration'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    ExecutionProvider.cpu,
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.developer_board),
+                  title: const Text('CoreML only'),
+                  subtitle:
+                      const Text('Force CoreML (fallback if unsupported)'),
+                  onTap: () => Navigator.pop(
+                    context,
+                    ExecutionProvider.coreml,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(width: 12),
-            FloatingActionButton.small(
-              onPressed: _isSegmentationInProgress
-                  ? null
-                  : () {
-                      setState(
-                        () => _pointMode = SegmentationPointMode.negative,
-                      );
-                    },
-              heroTag: 'negativeHint',
-              backgroundColor: _pointMode == SegmentationPointMode.negative
-                  ? Colors.red
-                  : null,
-              child: const Icon(Icons.remove_circle),
-            ),
-          ],
-          if (_mode == InteractionMode.draw && _hasManualDrawing)
-            const SizedBox(width: 12),
-          if (_mode == InteractionMode.draw && _hasManualDrawing)
-            FloatingActionButton(
-              onPressed: _clearManualMask,
-              heroTag: 'clear',
-              tooltip: 'Clear drawing',
-              child: const Icon(Icons.clear),
-            ),
-        ],
-      ),
+          ),
+        );
+      },
     );
+
+    if (provider != null) {
+      _controller.setExecutionProvider(provider);
+      FirebaseAnalytics.instance.logEvent(
+        name: 'execution_provider_selected',
+        parameters: {
+          'provider': _executionProviderValue,
+        },
+      );
+      AppLogger.log('Execution provider changed to $_executionProviderValue');
+    }
+  }
+
+  Future<void> _selectInpaintingModel() async {
+    final model = await showModalBottomSheet<InpaintingModel>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.memory),
+                  title: const Text('MI-GAN FP32'),
+                  subtitle: const Text('Higher precision, larger model'),
+                  onTap: () => Navigator.pop(context, InpaintingModel.fp32),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.blur_on),
+                  title: const Text('MI-GAN FP16'),
+                  subtitle: const Text(
+                      'Half precision mixed model, balance speed/quality'),
+                  onTap: () => Navigator.pop(context, InpaintingModel.fp16),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.speed),
+                  title: const Text('MI-GAN INT8 (dynamic quant)'),
+                  subtitle: const Text(
+                      'Smaller quantized model, dynamic calibration (may be slower)'),
+                  onTap: () =>
+                      Navigator.pop(context, InpaintingModel.int8Dynamic),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.flash_on),
+                  title: const Text('MI-GAN INT8 (static quant)'),
+                  subtitle: const Text(
+                      'Static calibration, fastest quantized option'),
+                  onTap: () =>
+                      Navigator.pop(context, InpaintingModel.int8Static),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (model != null) {
+      _controller.setInpaintingModel(model);
+      FirebaseAnalytics.instance.logEvent(
+        name: 'inpainting_model_selected',
+        parameters: {
+          'model': _controller.inpaintingModel.modelName,
+          'quantization': _controller.inpaintingModel.quantizationType,
+        },
+      );
+      AppLogger.log('Inpainting model changed to $model');
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text("Inpainting")),
-      body: Builder(
-        builder: (_) {
-          if (_outputBytes != null) {
-            return Center(
-              child: Image.memory(
-                _outputBytes!,
-                width: _imageWidth?.toDouble(),
-                height: _imageHeight?.toDouble(),
-                fit: BoxFit.contain,
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final colorScheme = Theme.of(context).colorScheme;
+        final Widget canvasChild;
+        if (_session.output.bytes != null) {
+          canvasChild = Center(
+            child: Image.memory(
+              _session.output.bytes!,
+              width: _session.image.width?.toDouble(),
+              height: _session.image.height?.toDouble(),
+              fit: BoxFit.contain,
+            ),
+          );
+        } else if (_session.image.file == null) {
+          canvasChild = const InpaintingEmptyState();
+        } else {
+          canvasChild = InpaintingImageStack(
+            imageFile: _session.image.file,
+            previewMaskBytes: _session.mask.previewBytes,
+            imageWidth: _session.image.width,
+            imageHeight: _session.image.height,
+            points: _session.interaction.points,
+            maskPulse: _maskPulse,
+            imageKey: _imageKey,
+            interactiveViewerKey: _interactiveViewerKey,
+            transformationController: _transformationController,
+            onCanvasSize: (size) => _session.canvas.size = size,
+            brushWidthForDraw: _currentBrushSceneWidth,
+            onTapDown: _handleTapDown,
+            onTapCancel: _handleTapCancel,
+            onTapUp: _handleTapUp,
+            onPanStart: _handlePanStart,
+            onPanUpdate: _handlePanUpdate,
+            onPanEnd: _handlePanEnd,
+          );
+        }
+
+        return Scaffold(
+          body: Stack(
+            children: [
+              const InpaintingBackground(),
+              Positioned(
+                top: -60,
+                right: -40,
+                child: Container(
+                  width: 180,
+                  height: 180,
+                  decoration: BoxDecoration(
+                    color: colorScheme.primary.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                ),
               ),
-            );
-          }
-          if (_imageFile == null) {
-            return const Center(child: Text("No image selected"));
-          }
-          return _buildImageStack();
-        },
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.centerFloat,
-      floatingActionButton: _buildFloatingButtons(),
+              Positioned(
+                bottom: 120,
+                left: -30,
+                child: Container(
+                  width: 140,
+                  height: 140,
+                  decoration: BoxDecoration(
+                    color: colorScheme.secondary.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+              SafeArea(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    InpaintingHeader(
+                      segmentationPrecisionLabel:
+                          _controller.segmentationPrecision.label,
+                      inpaintingModelLabel: _controller.inpaintingModel.label,
+                      executionProviderLabel: _executionProviderLabel,
+                      isSegmentationInProgress:
+                          _controller.isSegmentationInProgress,
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                        child: Center(
+                          child: AspectRatio(
+                            aspectRatio: 1,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: colorScheme.surface.withOpacity(0.95),
+                                borderRadius: BorderRadius.circular(28),
+                                border: Border.all(
+                                  color: colorScheme.outline.withOpacity(0.08),
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.08),
+                                    blurRadius: 24,
+                                    offset: const Offset(0, 12),
+                                  ),
+                                ],
+                              ),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(24),
+                                child: canvasChild,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          bottomNavigationBar: InpaintingActionBar(
+            onPick: _pickImage,
+            onCamera: _pickImageFromCamera,
+            onInpaint: _runInpainting,
+            onSave: _session.image.file == null ? null : _saveCurrentImage,
+            onSelectSegmentationModel: _selectSegmentationPrecision,
+            onSelectExecutionProvider: _selectExecutionProvider,
+            onSelectInpaintingModel: _selectInpaintingModel,
+            showHintControls:
+                _session.interaction.mode == InteractionMode.point &&
+                    _session.mask.segmentationBytes != null,
+            isPositiveSelected:
+                _session.interaction.pointMode == SegmentationPointMode.positive,
+            isNegativeSelected:
+                _session.interaction.pointMode == SegmentationPointMode.negative,
+            isSegmentationInProgress: _controller.isSegmentationInProgress,
+            onSelectPositive: () {
+              _controller.update(() => _session.interaction.pointMode =
+                  SegmentationPointMode.positive);
+            },
+            onSelectNegative: () {
+              _controller.update(() => _session.interaction.pointMode =
+                  SegmentationPointMode.negative);
+            },
+            showClear: _session.interaction.mode == InteractionMode.draw &&
+                _hasManualDrawing,
+            onClear: _clearManualMask,
+          ),
+        );
+      },
     );
   }
-}
-
-enum InteractionMode { draw, point }
-
-enum SegmentationPointMode { positive, negative }
-
-enum SegmentationPrecision {
-  fp32,
-  fp16,
-  int8Dynamic,
-  int8Static,
-  pruned012,
-  pruned025,
-  pruned040,
-  pruned054,
-}
-
-enum InpaintingModel { fp32, fp16, int8Dynamic, int8Static }
-
-class _SegmentationVisuals {
-  final Uint8List maskBytes;
-  final img.Image maskImage;
-  final Uint8List overlayBytes;
-  final Float32List lowResMask;
-
-  const _SegmentationVisuals({
-    required this.maskBytes,
-    required this.maskImage,
-    required this.overlayBytes,
-    required this.lowResMask,
-  });
 }
