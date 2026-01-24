@@ -17,6 +17,11 @@ The app provides a simple interactive workflow: select an image, draw a mask, an
 - **Developer-friendly logging**  
   Logs inference times, model events, failures, and internal states to help with debugging and performance profiling.
 
+## Demo
+
+![Inpainting demo](docs/demo.gif)
+
+
 ## Tech Stack
 
 - **Flutter / Dart** – cross-platform UI
