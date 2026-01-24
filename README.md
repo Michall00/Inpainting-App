@@ -62,7 +62,7 @@ and comparative evaluation of different models.
 
 ## Features
 
-- Image selection from device gallery
+- Image selection from device gallery or taking photo from camera
 - Interactive mask drawing
 - Object segmentation using MobileSAM (ONNX)
 - Image inpainting using deep learning models (ONNX)
