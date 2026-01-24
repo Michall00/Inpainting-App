@@ -7,24 +7,94 @@ import 'package:image/image.dart' as img;
 import 'package:onnxruntime/onnxruntime.dart';
 
 import '../utils/tensor_utils.dart';
+import '../utils/app_logger.dart';
+import 'execution_provider.dart';
 
 class SegmentationResult {
   final Uint8List maskBytes;
   final Float32List lowResMask;
+  final int encoderInferenceMs;
+  final int decoderInferenceMs;
 
   SegmentationResult({
     required this.maskBytes,
     required this.lowResMask,
+    required this.encoderInferenceMs,
+    required this.decoderInferenceMs,
   });
 }
 
 class SegmentationService {
   static bool _envInitialized = false;
+  static String lastExecutionProvider = 'unknown';
+  static ExecutionProvider preferredExecutionProvider =
+      ExecutionProvider.auto;
 
   static void _ensureEnvironmentInitialized() {
     if (_envInitialized) return;
     OrtEnv.instance.init();
     _envInitialized = true;
+  }
+
+  static OrtSessionOptions _createSessionOptions({bool preferCoreML = true}) {
+    final options = OrtSessionOptions();
+    if (preferCoreML) {
+      try {
+        options.appendCoreMLProvider(CoreMLFlags.enableOnSubgraph);
+      } catch (e) {
+        AppLogger.log('CoreML provider skipped: $e');
+      }
+    }
+    return options;
+  }
+
+  static OrtSession _createSession(ByteData modelData) {
+    if (preferredExecutionProvider == ExecutionProvider.cpu) {
+      return _createCpuSession(modelData);
+    }
+
+    final buffer = modelData.buffer.asUint8List();
+
+    OrtSessionOptions? options;
+    try {
+      options = _createSessionOptions(preferCoreML: true);
+      final session = OrtSession.fromBuffer(buffer, options);
+      lastExecutionProvider = 'coreml';
+      AppLogger.log(
+        'Created CoreML segmentation session addr=${session.address}',
+      );
+      return session;
+    } catch (error) {
+      final forcedCoreML =
+          preferredExecutionProvider == ExecutionProvider.coreml;
+      if (forcedCoreML) {
+        AppLogger.log(
+          'CoreML forced but failed, falling back to CPU. Error: $error',
+        );
+      } else {
+        AppLogger.log(
+          'Primary CoreML session failed, retrying with CPU. Error: $error',
+        );
+      }
+    } finally {
+      options?.release();
+    }
+    return _createCpuSession(modelData);
+  }
+
+  static OrtSession _createCpuSession(ByteData modelData) {
+    final buffer = modelData.buffer.asUint8List();
+    final cpuOptions = _createSessionOptions(preferCoreML: false);
+    try {
+      final session = OrtSession.fromBuffer(buffer, cpuOptions);
+      lastExecutionProvider = 'cpu';
+      AppLogger.log(
+        'Created CPU segmentation session addr=${session.address}',
+      );
+      return session;
+    } finally {
+      cpuOptions.release();
+    }
   }
 
   static Future<SegmentationResult> segmentFromPoint({
@@ -74,21 +144,24 @@ class SegmentationService {
     final imageBytes = await imageFile.readAsBytes();
     final image = img.decodeImage(imageBytes)!;
 
-    final encoderSession = OrtSession.fromBuffer(
-      encoderData.buffer.asUint8List(),
-      OrtSessionOptions(),
-    );
-
+    final encoderSession = _createSession(encoderData);
     final encoderInput = convertImageToFloatNCHW(image);
-
-    final embeddings = encoderSession.run(
-      OrtRunOptions(),
-      {'input_image': encoderInput},
-      ['image_embeddings'],
-    );
-
-    encoderInput.release();
-    encoderSession.release();
+    final encoderRunOptions = OrtRunOptions();
+    final encoderStart = DateTime.now();
+    List<OrtValue?> embeddings;
+    try {
+      embeddings = encoderSession.run(
+        encoderRunOptions,
+        {'input_image': encoderInput},
+        ['image_embeddings'],
+      );
+    } finally {
+      encoderRunOptions.release();
+      encoderInput.release();
+      encoderSession.release();
+    }
+    final encoderInferenceMs =
+        DateTime.now().difference(encoderStart).inMilliseconds;
 
     final imageEmbeddings = embeddings[0]!;
 
@@ -159,10 +232,9 @@ class SegmentationService {
       [2],
     );
 
-    final decoderSession = OrtSession.fromBuffer(
-      decoderData.buffer.asUint8List(),
-      OrtSessionOptions(),
-    );
+    final decoderSession = _createSession(decoderData);
+    final decoderRunOptions = OrtRunOptions();
+    final decoderStart = DateTime.now();
 
     late final Uint8List encodedMask;
     var lowResMaskOutput = Float32List(maskElements);
@@ -176,7 +248,7 @@ class SegmentationService {
         'orig_im_size': origImSize,
       };
 
-      final outputs = decoderSession.run(OrtRunOptions(), decoderInputs);
+      final outputs = decoderSession.run(decoderRunOptions, decoderInputs);
       try {
         if (outputs.isEmpty || outputs[0] == null) {
           throw StateError('Masks output was not produced by decoder.');
@@ -223,12 +295,21 @@ class SegmentationService {
       hasMaskInput.release();
       origImSize.release();
       imageEmbeddings.release();
+      for (final value in embeddings.skip(1)) {
+        value?.release();
+      }
+      decoderRunOptions.release();
       decoderSession.release();
     }
+
+    final decoderInferenceMs =
+        DateTime.now().difference(decoderStart).inMilliseconds;
 
     return SegmentationResult(
       maskBytes: encodedMask,
       lowResMask: lowResMaskOutput,
+      encoderInferenceMs: encoderInferenceMs,
+      decoderInferenceMs: decoderInferenceMs,
     );
   }
 
