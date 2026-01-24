@@ -1,26 +1,92 @@
-# Inpainting App
+# Inpainting-App
 
-A Flutter-based mobile application for object removal from images using on-device deep learning models.  
-The app provides a simple interactive workflow: select an image, draw a mask, and let the inpainting model reconstruct the missing region. All processing runs locally on the device using ONNX Runtime.
+Inpainting-App is a cross-platform Flutter application for offline object removal from images. The system performs on-device inference using ONNX Runtime and combines interactive segmentation with deep learning–based image inpainting.
 
-## Features
+The application was developed as part of an engineering thesis focused on mobile object removal and visual artifact handling (e.g. shadows and reflections), without relying on cloud services or external APIs.
 
-- **Image selection**  
-  Choose images from the gallery or local filesystem or take a photo.
+## Architectural Overview
 
-- **Automatic segmentation with MobileSAM (ONNX)**  
-  Tap on the image or draw circle over the object to generate segmentation masks using MobileSAM, enabling object-aware removal workflows.
+The application is designed as a modular foundation for experimenting
+with mobile inpainting workflows.
 
-- **On-device inpainting with MI-GAN (ONNX)**  
-  The MI-GAN model performs high-quality inpainting with no internet connection required.
+By combining segmentation (MobileSAM) with generative inpainting (MI-GAN),
+the system supports fully offline object removal on mobile devices.
+The architecture emphasizes modularity, allowing easy integration
+of new models and systematic benchmarking.
 
-- **Developer-friendly logging**  
-  Logs inference times, model events, failures, and internal states to help with debugging and performance profiling.
+
+## Pipeline Overview
+
+The object removal process follows a multi-stage pipeline:
+
+1. Image selection by the user
+2. Interactive mask creation (manual or segmentation-assisted)
+3. Object segmentation using a MobileSAM-based ONNX model
+4. Image inpainting using a generative model
+5. Display and export of the reconstructed image
+
+<table>
+  <tr>
+    <td align="center">
+      <img src="docs/base_view.jpeg" width="180"/><br/>
+      Start
+    </td>
+    <td align="center">
+      <img src="docs/image_picked.jpeg" width="180"/><br/>
+      Image selected
+    </td>
+    <td align="center">
+      <img src="docs/mask_drew.jpeg" width="180"/><br/>
+      Manual mask
+    </td>
+    <td align="center">
+      <img src="docs/segmented.jpeg" width="180"/><br/>
+      SAM segmentation
+    </td>
+    <td align="center">
+      <img src="docs/inpainted.jpeg" width="180"/><br/>
+      Inpainted result
+    </td>
+  </tr>
+</table>
+
+
+
+Each stage is implemented as a separate module to allow easy replacement
+and comparative evaluation of different models.
 
 ## Demo
 
 ![Inpainting demo](docs/demo.gif)
 
+## Features
+
+- Image selection from device gallery
+- Interactive mask drawing
+- Object segmentation using MobileSAM (ONNX)
+- Image inpainting using deep learning models (ONNX)
+- Fully offline, on-device inference
+- Cross-platform Flutter implementation
+- Modular pipeline designed for experimentation and benchmarking
+
+## Platform Support
+
+The application was developed using Flutter and is intended to be cross-platform.
+However, all experimental evaluation and on-device testing were performed exclusively on iOS devices.
+
+The behavior on Android devices has not been experimentally validated
+and may require additional adjustments, particularly with respect to
+ONNX Runtime execution providers and hardware acceleration.
+
+## Installation and Running
+
+Install dependencies:
+
+```flutter pub get```
+
+Run the application on a connected device or simulator:
+
+```flutter run```
 
 ## Tech Stack
 
@@ -42,8 +108,23 @@ The app provides a simple interactive workflow: select an image, draw a mask, an
 - `lib/image_utils.dart`, `lib/tensor_utils.dart` – utilities for converting images to tensors and back
 - `lib/app_logger.dart` – structured logging for debugging and performance metrics
 
-## Overview
+## Model Setup
 
-The app is designed as a modular foundation for experimenting with mobile inpainting workflows.  
-By combining segmentation (MobileSAM) with generative inpainting (MI-GAN), the application aims to support advanced object-removal use cases entirely offline. The architecture allows for easy extension — such as integrating new models or benchmarking models.
+The application uses ONNX models for both segmentation and inpainting.
 
+Required models:
+- MobileSAM (segmentation)
+- MI-GAN (inpainting)
+
+Models should be placed in the following directory: `assets`
+
+Ensure that the model paths and input resolutions match the configuration
+used in the application.
+
+
+## Related Repositories
+
+- MobileSAM-Shadow  
+  Research fork of MobileSAM used for fine-tuning segmentation models
+  with support for shadows and reflections:  
+  https://github.com/Michall00/MobileSAM-Shadow
