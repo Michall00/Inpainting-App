@@ -5,9 +5,9 @@ import 'dart:ui';
 import 'package:flutter/services.dart';
 import 'package:image/image.dart' as img;
 
-import '../../services/execution_provider.dart';
-import '../../services/inpainting_service.dart';
-import '../../services/segmentation_service.dart';
+import '../services/execution_provider.dart';
+import '../services/inpainting_service.dart';
+import '../services/segmentation_service.dart';
 
 class SegmentationVisuals {
   final Uint8List maskBytes;

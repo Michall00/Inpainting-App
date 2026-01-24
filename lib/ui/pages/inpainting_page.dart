@@ -16,10 +16,10 @@ import '../../utils/image_utils.dart';
 import 'package:image_gallery_saver/image_gallery_saver.dart';
 import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:vector_math/vector_math_64.dart' show Matrix4;
-import '../inpainting/inpainting_session_state.dart';
-import '../inpainting/inpainting_controller.dart';
-import '../inpainting/model_info.dart';
-import '../inpainting/inpainting_types.dart';
+import '../../inpainting/inpainting_session_state.dart';
+import '../../inpainting/inpainting_controller.dart';
+import '../../inpainting/model_info.dart';
+import '../../inpainting/inpainting_types.dart';
 
 class InpaintingPage extends StatefulWidget {
   const InpaintingPage({super.key});

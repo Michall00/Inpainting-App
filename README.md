@@ -24,27 +24,26 @@ The object removal process follows a multi-stage pipeline:
 3. Object segmentation using a MobileSAM-based ONNX model
 4. Image inpainting using a generative model
 5. Display and export of the reconstructed image
-
 <table>
   <tr>
     <td align="center">
-      <img src="docs/base_view.jpeg" width="180"/><br/>
+      <img src="docs/base_view.jpeg" style="width:160px;height:300px;object-fit:cover;" /><br/>
       Start
     </td>
     <td align="center">
-      <img src="docs/image_picked.jpeg" width="180"/><br/>
+      <img src="docs/image_picked.jpeg" style="width:160px;height:300px;object-fit:cover;" /><br/>
       Image selected
     </td>
     <td align="center">
-      <img src="docs/mask_drew.jpeg" width="180"/><br/>
+      <img src="docs/mask_drew.jpeg" style="width:160px;height:300px;object-fit:cover;" /><br/>
       Manual mask
     </td>
     <td align="center">
-      <img src="docs/segmented.jpeg" width="180"/><br/>
+      <img src="docs/segmented.jpeg" style="width:160px;height:300px;object-fit:cover;" /><br/>
       SAM segmentation
     </td>
     <td align="center">
-      <img src="docs/inpainted.jpeg" width="180"/><br/>
+      <img src="docs/inpainted.jpeg" style="width:160px;height:300px;object-fit:cover;" /><br/>
       Inpainted result
     </td>
   </tr>
@@ -57,7 +56,9 @@ and comparative evaluation of different models.
 
 ## Demo
 
-![Inpainting demo](docs/demo.gif)
+<p align="center">
+  <img src="docs/demo.gif" width="280" />
+</p>
 
 ## Features
 
@@ -98,15 +99,13 @@ Run the application on a connected device or simulator:
 
 ## Project Structure (short)
 
-- `lib/app.dart` – global app configuration (theme, navigation)
 - `lib/main.dart` – app entry point
-- `lib/inpainting_page.dart` – complete inpainting workflow UI
-- `lib/mask_painter.dart` – canvas overlay for mask drawing
-- `lib/image_service.dart` – image loading, resizing, saving
-- `lib/inpainting_service.dart` – MI-GAN inference logic
-- `lib/segmentation_service.dart` – MobileSAM encoder/decoder inference
-- `lib/image_utils.dart`, `lib/tensor_utils.dart` – utilities for converting images to tensors and back
-- `lib/app_logger.dart` – structured logging for debugging and performance metrics
+- `lib/app.dart` – global app configuration (theme, navigation)
+- `lib/firebase_options.dart` – Firebase initialization options
+- `lib/services/` – inference + image processing services
+- `lib/ui/` – UI pages and widgets (presentation layer)
+- `lib/inpainting/` – inpainting workflow logic and state
+- `lib/utils/` – shared utilities (logging, image/tensor helpers)
 
 ## Model Setup
 

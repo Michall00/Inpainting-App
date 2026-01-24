@@ -5,9 +5,9 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:image/image.dart' as img;
 
-import '../../services/execution_provider.dart';
-import '../../services/inpainting_service.dart';
-import '../../services/segmentation_service.dart';
+import '../services/execution_provider.dart';
+import '../services/inpainting_service.dart';
+import '../services/segmentation_service.dart';
 import 'inpainting_pipeline.dart';
 import 'inpainting_session_state.dart';
 import 'inpainting_types.dart';
