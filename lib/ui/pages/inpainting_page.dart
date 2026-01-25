@@ -67,7 +67,8 @@ class _InpaintingPageState extends State<InpaintingPage>
   }
 
   void _updateMaskPulse() {
-    final shouldPulse = !_controller.isSegmentationInProgress && !_controller.isInpaintingInProgress;
+    final shouldPulse = !_controller.isSegmentationInProgress &&
+        !_controller.isInpaintingInProgress;
     if (shouldPulse) {
       if (!_maskPulseController.isAnimating) {
         _maskPulseController.repeat(reverse: true);
@@ -158,9 +159,6 @@ class _InpaintingPageState extends State<InpaintingPage>
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Starting segmentation from point...")),
-    );
     AppLogger.log('Segmentation from point requested: $point');
 
     _controller.setSegmentationInProgress(true);
@@ -252,16 +250,18 @@ class _InpaintingPageState extends State<InpaintingPage>
     _controller.update(() {
       _session.interaction.points.clear();
       if (_session.mask.segmentationBytes != null) {
-        _session.mask.image = img.decodeImage(_session.mask.segmentationBytes!)!;
-      } else {
         _session.mask.image =
-            _createBlankMaskImage(_session.image.width!, _session.image.height!);
+            img.decodeImage(_session.mask.segmentationBytes!)!;
+      } else {
+        _session.mask.image = _createBlankMaskImage(
+            _session.image.width!, _session.image.height!);
       }
     });
   }
 
   Future<void> _runSegmentationFromBbox(Rect bbox) async {
-    if (_session.image.file == null || _controller.isSegmentationInProgress) return;
+    if (_session.image.file == null || _controller.isSegmentationInProgress)
+      return;
     AppLogger.log('Segmentation from bbox requested: $bbox');
 
     _controller.setSegmentationInProgress(true);
@@ -367,13 +367,6 @@ class _InpaintingPageState extends State<InpaintingPage>
     AppLogger.log(
         'Refining segmentation with ${isPositive ? 'positive' : 'negative'} point: $point');
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-            'Refining segmentation with ${isPositive ? 'positive' : 'negative'} point: $point'),
-      ),
-    );
-
     final previousPositive =
         List<Offset>.from(_session.interaction.positivePoints);
     final previousNegative =
@@ -409,14 +402,6 @@ class _InpaintingPageState extends State<InpaintingPage>
           ..addAll(update.negativePoints);
       });
       _updateMaskPulse();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Added ${isPositive ? 'positive' : 'negative'} point at '
-            '(${point.dx.toStringAsFixed(1)}, ${point.dy.toStringAsFixed(1)})',
-          ),
-        ),
-      );
     }
 
     try {
@@ -552,9 +537,6 @@ class _InpaintingPageState extends State<InpaintingPage>
         return;
       }
       final point = _session.interaction.lastTapImagePoint!;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Segmentation point: $point")),
-      );
       await _runSegmentationFromClick(point);
       return;
     }
@@ -609,9 +591,6 @@ class _InpaintingPageState extends State<InpaintingPage>
           .toDouble(),
     );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Segmentation from bbox: $box")),
-    );
     await _runSegmentationFromBbox(imageRect);
   }
 
@@ -640,7 +619,8 @@ class _InpaintingPageState extends State<InpaintingPage>
       final originalImage = img.decodeImage(bytes)!;
 
       if (_session.mask.segmentationBytes != null) {
-        _session.mask.image = img.decodeImage(_session.mask.segmentationBytes!)!;
+        _session.mask.image =
+            img.decodeImage(_session.mask.segmentationBytes!)!;
       }
 
       final dilated = dilateMask(_session.mask.image!, radius: 20);
@@ -737,10 +717,10 @@ class _InpaintingPageState extends State<InpaintingPage>
     if (_session.mask.segmentationBytes != null) {
       _refineSegmentation(imagePoint);
     } else {
-    _controller.update(() {
-      _session.interaction.mode = InteractionMode.point;
-      _session.interaction.lastTapImagePoint = imagePoint;
-    });
+      _controller.update(() {
+        _session.interaction.mode = InteractionMode.point;
+        _session.interaction.lastTapImagePoint = imagePoint;
+      });
       if (!_controller.isSegmentationInProgress) {
         await _onSegmentPressed();
       }
@@ -753,11 +733,6 @@ class _InpaintingPageState extends State<InpaintingPage>
     double drawH,
     double brushSceneWidth,
   ) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Clicked on image (draw)."),
-      ),
-    );
     final scenePoint = _globalToScene(details.globalPosition);
     if (scenePoint == null) return;
     _controller.update(() {
@@ -792,7 +767,8 @@ class _InpaintingPageState extends State<InpaintingPage>
 
   Future<void> _handlePanEnd() async {
     _controller.update(() => _session.interaction.points.add(Offset.infinite));
-    final hasStroke = _session.interaction.points.any((point) => point.isFinite);
+    final hasStroke =
+        _session.interaction.points.any((point) => point.isFinite);
     if (hasStroke && !_controller.isSegmentationInProgress) {
       await _onSegmentPressed();
     }
@@ -1133,10 +1109,10 @@ class _InpaintingPageState extends State<InpaintingPage>
             showHintControls:
                 _session.interaction.mode == InteractionMode.point &&
                     _session.mask.segmentationBytes != null,
-            isPositiveSelected:
-                _session.interaction.pointMode == SegmentationPointMode.positive,
-            isNegativeSelected:
-                _session.interaction.pointMode == SegmentationPointMode.negative,
+            isPositiveSelected: _session.interaction.pointMode ==
+                SegmentationPointMode.positive,
+            isNegativeSelected: _session.interaction.pointMode ==
+                SegmentationPointMode.negative,
             isSegmentationInProgress: _controller.isSegmentationInProgress,
             onSelectPositive: () {
               _controller.update(() => _session.interaction.pointMode =
