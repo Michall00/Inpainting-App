@@ -9,8 +9,6 @@ extension SegmentationPrecisionInfo on SegmentationPrecision {
         return 'mobileSAM_fp16';
       case SegmentationPrecision.int8Dynamic:
         return 'mobileSAM_int8_dynamic';
-      case SegmentationPrecision.int8Static:
-        return 'mobileSAM_int8_static';
       case SegmentationPrecision.pruned012:
         return 'mobileSAM_pruned_012';
       case SegmentationPrecision.pruned025:
@@ -30,8 +28,6 @@ extension SegmentationPrecisionInfo on SegmentationPrecision {
         return 'fp16';
       case SegmentationPrecision.int8Dynamic:
         return 'int8_dynamic';
-      case SegmentationPrecision.int8Static:
-        return 'int8_static';
       case SegmentationPrecision.pruned012:
         return 'pruned_012';
       case SegmentationPrecision.pruned025:
@@ -51,8 +47,6 @@ extension SegmentationPrecisionInfo on SegmentationPrecision {
         return 'assets/encoder_best_fp16.onnx';
       case SegmentationPrecision.int8Dynamic:
         return 'assets/encoder_best_int8_dynamic.onnx';
-      case SegmentationPrecision.int8Static:
-        return 'assets/encoder_best_int8_static.onnx';
       case SegmentationPrecision.pruned012:
         return 'assets/encoder_best_pruned_012.onnx';
       case SegmentationPrecision.pruned025:
@@ -72,8 +66,6 @@ extension SegmentationPrecisionInfo on SegmentationPrecision {
         return 'assets/decoder_best_fp16.onnx';
       case SegmentationPrecision.int8Dynamic:
         return 'assets/decoder_best_int8_dynamic.onnx';
-      case SegmentationPrecision.int8Static:
-        return 'assets/decoder_best_int8_static.onnx';
       case SegmentationPrecision.pruned012:
       case SegmentationPrecision.pruned025:
       case SegmentationPrecision.pruned040:
@@ -90,8 +82,6 @@ extension SegmentationPrecisionInfo on SegmentationPrecision {
         return 'SAM FP16';
       case SegmentationPrecision.int8Dynamic:
         return 'SAM INT8 Dyn';
-      case SegmentationPrecision.int8Static:
-        return 'SAM INT8 Static';
       case SegmentationPrecision.pruned012:
         return 'SAM Pruned 12';
       case SegmentationPrecision.pruned025:
@@ -113,8 +103,6 @@ extension InpaintingModelInfo on InpaintingModel {
         return 'assets/migan_mixed_fp16.onnx';
       case InpaintingModel.int8Dynamic:
         return 'assets/migan_int8_quant.onnx';
-      case InpaintingModel.int8Static:
-        return 'assets/migan_int8_quant_static.onnx';
     }
   }
 
@@ -126,8 +114,6 @@ extension InpaintingModelInfo on InpaintingModel {
         return 'migan_fp16';
       case InpaintingModel.int8Dynamic:
         return 'migan_int8_dynamic';
-      case InpaintingModel.int8Static:
-        return 'migan_int8_static';
     }
   }
 
@@ -139,8 +125,6 @@ extension InpaintingModelInfo on InpaintingModel {
         return 'fp16';
       case InpaintingModel.int8Dynamic:
         return 'int8_dynamic';
-      case InpaintingModel.int8Static:
-        return 'int8_static';
     }
   }
 
@@ -152,8 +136,6 @@ extension InpaintingModelInfo on InpaintingModel {
         return 'MI-GAN FP16';
       case InpaintingModel.int8Dynamic:
         return 'MI-GAN INT8 Dyn';
-      case InpaintingModel.int8Static:
-        return 'MI-GAN INT8 Static';
     }
   }
 }

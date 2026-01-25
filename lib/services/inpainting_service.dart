@@ -60,17 +60,9 @@ class InpaintingService {
       );
       return session;
     } catch (error) {
-      final forcedCoreML =
-          preferredExecutionProvider == ExecutionProvider.coreml;
-      if (forcedCoreML) {
-        AppLogger.log(
-          'CoreML forced but failed, falling back to CPU. Error: $error',
-        );
-      } else {
-        AppLogger.log(
-          'Primary CoreML session failed, retrying with CPU. Error: $error',
-        );
-      }
+      AppLogger.log(
+        'CoreML session failed, falling back to CPU. Error: $error',
+      );
     } finally {
       options?.release();
     }

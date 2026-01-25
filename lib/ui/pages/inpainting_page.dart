@@ -851,15 +851,6 @@ class _InpaintingPageState extends State<InpaintingPage>
                     SegmentationPrecision.int8Dynamic,
                   ),
                 ),
-                ListTile(
-                  leading: const Icon(Icons.flash_on),
-                  title: const Text('MobileSAM INT8 (static quant)'),
-                  subtitle: const Text('Static calibration, fastest option'),
-                  onTap: () => Navigator.pop(
-                    context,
-                    SegmentationPrecision.int8Static,
-                  ),
-                ),
                 const ListTile(
                   title: Text('MobileSAM (pruned encoder)'),
                 ),
@@ -932,8 +923,8 @@ class _InpaintingPageState extends State<InpaintingPage>
                 ),
                 ListTile(
                   leading: const Icon(Icons.auto_mode),
-                  title: const Text('Auto (CoreML > CPU)'),
-                  subtitle: const Text('Try CoreML first, fallback to CPU'),
+                  title: const Text('CoreML'),
+                  subtitle: const Text('Use CoreML with CPU fallback'),
                   onTap: () => Navigator.pop(
                     context,
                     ExecutionProvider.auto,
@@ -946,16 +937,6 @@ class _InpaintingPageState extends State<InpaintingPage>
                   onTap: () => Navigator.pop(
                     context,
                     ExecutionProvider.cpu,
-                  ),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.developer_board),
-                  title: const Text('CoreML only'),
-                  subtitle:
-                      const Text('Force CoreML (fallback if unsupported)'),
-                  onTap: () => Navigator.pop(
-                    context,
-                    ExecutionProvider.coreml,
                   ),
                 ),
               ],
@@ -1006,14 +987,6 @@ class _InpaintingPageState extends State<InpaintingPage>
                       'Smaller quantized model, dynamic calibration (may be slower)'),
                   onTap: () =>
                       Navigator.pop(context, InpaintingModel.int8Dynamic),
-                ),
-                ListTile(
-                  leading: const Icon(Icons.flash_on),
-                  title: const Text('MI-GAN INT8 (static quant)'),
-                  subtitle: const Text(
-                      'Static calibration, fastest quantized option'),
-                  onTap: () =>
-                      Navigator.pop(context, InpaintingModel.int8Static),
                 ),
               ],
             ),
